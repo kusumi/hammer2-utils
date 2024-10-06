@@ -1,0 +1,5 @@
+v0.1.0
+======
+- Initial release
+- Add newfs_hammer2(8)
+- Add hammer2(8) hash|dhash|show|freemap|volhdr directives

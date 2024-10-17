@@ -285,6 +285,19 @@ pub fn get_uuid_string_from_bytes(b: &[u8]) -> String {
         b[10], b[11], b[12], b[13], b[14], b[15])
 }
 
+#[must_use]
+pub fn get_chars_per_line() -> usize {
+    if let Some((terminal_size::Width(w), terminal_size::Height(_))) =
+        terminal_size::terminal_size()
+    {
+        w.into()
+    } else if let Ok(v) = std::env::var("COLUMNS") {
+        v.parse().unwrap_or(80)
+    } else {
+        80 // last resort
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::hammer2fs;
@@ -382,5 +395,18 @@ mod tests {
             super::get_uuid_string_from_bytes(util::any_as_u8_slice(&u)),
             hammer2fs::HAMMER2_UUID_STRING
         );
+    }
+
+    #[test]
+    fn test_terminal_size() {
+        match terminal_size::terminal_size() {
+            Some(v) => {
+                println!("{v:?}");
+                let (terminal_size::Width(w), terminal_size::Height(h)) = v;
+                assert!(w > 0);
+                assert!(h > 0);
+            }
+            None => panic!(""),
+        }
     }
 }

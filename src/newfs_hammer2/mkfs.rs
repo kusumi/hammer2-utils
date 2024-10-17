@@ -293,7 +293,8 @@ fn format_inode(
         bref.key = rawip.meta.name_key;
         bref.copyid = hammer2fs::HAMMER2_COPYID_LOCAL;
         bref.keybits = 0;
-        bref.check_as_xxhash64_mut().value = xxhash::xxh64(util::any_as_u8_slice(&rawip));
+        bref.check_as_mut::<hammer2fs::Hammer2BlockrefCheckXxhash64>()
+            .value = xxhash::xxh64(util::any_as_u8_slice(&rawip));
         bref.typ = hammer2fs::HAMMER2_BREF_TYPE_INODE;
         bref.methods = hammer2fs::enc_check(hammer2fs::HAMMER2_CHECK_XXHASH64)
             | hammer2fs::enc_comp(hammer2fs::HAMMER2_COMP_NONE);
@@ -356,7 +357,7 @@ fn format_inode(
     // top-level block table at the volume root and doesn't try to
     // create an indirect block, so we are limited to ~4 at filesystem
     // creation time.  More can be added after mounting.
-    let blockset = rawip.u_as_blockset_mut();
+    let blockset = rawip.u_as_mut::<hammer2fs::Hammer2Blockset>();
     root_blockref.sort_by_key(|bref| bref.key);
     for i in 0..root_blockref.len() {
         if i != root_blockref.len() - 1 {
@@ -368,7 +369,9 @@ fn format_inode(
     // The sroot blockref will be stored in the volume header.
     sroot_blockref.copyid = hammer2fs::HAMMER2_COPYID_LOCAL;
     sroot_blockref.keybits = 0;
-    sroot_blockref.check_as_xxhash64_mut().value = xxhash::xxh64(util::any_as_u8_slice(&rawip));
+    sroot_blockref
+        .check_as_mut::<hammer2fs::Hammer2BlockrefCheckXxhash64>()
+        .value = xxhash::xxh64(util::any_as_u8_slice(&rawip));
     sroot_blockref.typ = hammer2fs::HAMMER2_BREF_TYPE_INODE;
     sroot_blockref.methods = hammer2fs::enc_check(hammer2fs::HAMMER2_CHECK_XXHASH64)
         | hammer2fs::enc_comp(hammer2fs::HAMMER2_COMP_AUTOZERO);
@@ -535,7 +538,7 @@ fn alloc_direct(base: u64, bytes: u64) -> (u64, hammer2fs::Hammer2Blockref) {
         radix = hammer2fs::HAMMER2_RADIX_MIN;
     }
 
-    let mut bref = hammer2fs::Hammer2Blockref::new();
+    let mut bref = hammer2fs::Hammer2Blockref::new_empty();
     bref.data_off = base | u64::from(radix);
     bref.vradix = radix;
     (base + (1 << radix), bref)

@@ -23,7 +23,7 @@ pub(crate) fn run(devpath: &str, opt: &Hammer2Options) -> std::io::Result<()> {
         let vol = fso.get_root_volume_mut().ok_or_else(util::notfound)?;
         let offset = volume::get_volume_data_offset(i);
         if offset < vol.get_size() {
-            let buf = vol.preadx(hammer2fs::HAMMER2_PBUFSIZE, offset)?;
+            let buf = vol.preadx(hammer2fs::HAMMER2_VOLUME_BYTES, offset)?;
             let voldata = util::align_to::<hammer2fs::Hammer2VolumeData>(&buf);
             show::print_volume_summary(
                 hammer2fs::HAMMER2_ROOT_VOLUME.into(),
@@ -31,8 +31,8 @@ pub(crate) fn run(devpath: &str, opt: &Hammer2Options) -> std::io::Result<()> {
                 voldata.mirror_tid,
             );
             if sopt.all_volume_data || best.0 == i {
-                let mut broot = hammer2fs::Hammer2Blockref::new();
-                broot.typ = hammer2fs::HAMMER2_BREF_TYPE_FREEMAP;
+                let mut broot =
+                    hammer2fs::Hammer2Blockref::new(hammer2fs::HAMMER2_BREF_TYPE_FREEMAP);
                 broot.mirror_tid = voldata.mirror_tid;
                 broot.data_off = offset | u64::try_from(hammer2fs::HAMMER2_PBUFRADIX).unwrap();
                 show::show_blockref(

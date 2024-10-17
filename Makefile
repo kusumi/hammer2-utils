@@ -1,6 +1,8 @@
-bin:	newfs_hammer2 hammer2
+bin:	newfs_hammer2 fsck_hammer2 hammer2
 newfs_hammer2:
 	cargo build --release --bin newfs_hammer2
+fsck_hammer2:
+	cargo build --release --bin fsck_hammer2
 hammer2:
 	cargo build --release --bin hammer2
 clean:

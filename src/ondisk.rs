@@ -479,8 +479,12 @@ impl Hammer2Ondisk {
             for j in 0..hammer2fs::HAMMER2_NUM_VOLHDRS {
                 let offset = volume::get_volume_data_offset(j);
                 if offset < vol.get_size() {
-                    let buf = vol.preadx(hammer2fs::HAMMER2_PBUFSIZE, offset)?;
+                    let buf = vol.preadx(hammer2fs::HAMMER2_VOLUME_BYTES, offset)?;
                     let voldata = util::align_to::<hammer2fs::Hammer2VolumeData>(&buf);
+                    assert!(
+                        voldata.magic == hammer2fs::HAMMER2_VOLUME_ID_HBO
+                            || voldata.magic == hammer2fs::HAMMER2_VOLUME_ID_ABO
+                    );
                     if j == 0 || best.mirror_tid < voldata.mirror_tid {
                         index = j;
                         best = *voldata;
@@ -494,6 +498,30 @@ impl Hammer2Ondisk {
             assert_ne!(best.1.mirror_tid, 0);
         }
         Ok(bests)
+    }
+
+    /// # Errors
+    /// # Panics
+    pub fn read_media(&mut self, bref: &hammer2fs::Hammer2Blockref) -> std::io::Result<Vec<u8>> {
+        let radix = bref.data_off & hammer2fs::HAMMER2_OFF_MASK_RADIX;
+        let bytes = if radix == 0 { 0 } else { 1 << radix };
+        if bytes == 0 {
+            return Ok(vec![]);
+        }
+        let io_off = bref.data_off & !hammer2fs::HAMMER2_OFF_MASK_RADIX;
+        let io_base = io_off & !hammer2fs::HAMMER2_LBUFMASK;
+        let boff = io_off - io_base;
+        let mut io_bytes = hammer2fs::HAMMER2_LBUFSIZE;
+        while io_bytes + boff < bytes {
+            io_bytes <<= 1;
+        }
+        if io_bytes > hammer2fs::HAMMER2_PBUFSIZE {
+            return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
+        }
+        let vol = self.get_volume_mut(io_off).ok_or_else(util::notfound)?;
+        Ok(vol.preadx(io_bytes, io_base - vol.get_offset())?
+            [usize::try_from(boff).unwrap()..usize::try_from(boff + bytes).unwrap()]
+            .to_vec())
     }
 }
 

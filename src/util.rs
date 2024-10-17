@@ -22,6 +22,18 @@ pub fn get_basename(f: &str) -> String {
         .to_string()
 }
 
+/// # Errors
+pub fn bin_to_string(b: &[u8]) -> Result<String, std::string::FromUtf8Error> {
+    let mut v = vec![];
+    for x in b {
+        if *x == 0 {
+            break;
+        }
+        v.push(*x);
+    }
+    String::from_utf8(v)
+}
+
 /// # Panics
 #[must_use]
 pub fn get_current_time() -> u64 {
@@ -60,18 +72,33 @@ pub fn seek_cur(fp: &mut std::fs::File, offset: i64) -> std::io::Result<u64> {
 
 /// # Panics
 #[must_use]
+pub fn align_head_to<T>(buf: &[u8]) -> &T {
+    let (prefix, body, _) = unsafe { buf.align_to::<T>() };
+    assert!(prefix.is_empty(), "{:?} {}", prefix, prefix.len());
+    &body[0]
+}
+
+/// # Panics
+#[must_use]
 pub fn align_to<T>(buf: &[u8]) -> &T {
     let (prefix, body, suffix) = unsafe { buf.align_to::<T>() };
-    assert!(prefix.is_empty());
-    assert!(suffix.is_empty());
+    assert!(prefix.is_empty(), "{:?} {}", prefix, prefix.len());
+    assert!(suffix.is_empty(), "{:?} {}", suffix, suffix.len());
     &body[0]
+}
+
+/// # Panics
+pub fn align_head_to_mut<T>(buf: &mut [u8]) -> &mut T {
+    let (prefix, body, _) = unsafe { buf.align_to_mut::<T>() };
+    assert!(prefix.is_empty(), "{:?} {}", prefix, prefix.len());
+    &mut body[0]
 }
 
 /// # Panics
 pub fn align_to_mut<T>(buf: &mut [u8]) -> &mut T {
     let (prefix, body, suffix) = unsafe { buf.align_to_mut::<T>() };
-    assert!(prefix.is_empty());
-    assert!(suffix.is_empty());
+    assert!(prefix.is_empty(), "{:?} {}", prefix, prefix.len());
+    assert!(suffix.is_empty(), "{:?} {}", suffix, suffix.len());
     &mut body[0]
 }
 
@@ -135,4 +162,39 @@ pub fn init_std_logger() -> Result<(), log::SetLoggerError> {
     let env = env_logger::Env::default()
         .filter_or("RUST_LOG", if is_debug_set() { "trace" } else { "info" });
     env_logger::try_init_from_env(env)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_bin_to_string() {
+        assert_eq!(
+            super::bin_to_string(&[104, 97, 109, 109, 101, 114, 50]),
+            Ok("hammer2".to_string())
+        );
+        assert_eq!(
+            super::bin_to_string(&[104, 97, 109, 109, 101, 114, 50, 0]),
+            Ok("hammer2".to_string())
+        );
+        assert_eq!(
+            super::bin_to_string(&[104, 97, 109, 109, 101, 114, 50, 0, 0]),
+            Ok("hammer2".to_string())
+        );
+
+        assert_eq!(super::bin_to_string(&[0]), Ok(String::new()));
+        assert_eq!(super::bin_to_string(&[0, 0]), Ok(String::new()));
+        assert_eq!(
+            super::bin_to_string(&[0, 0, 104, 97, 109, 109, 101, 114, 50]),
+            Ok(String::new())
+        );
+    }
+
+    #[test]
+    fn test_get_current_time() {
+        let t1 = super::get_current_time();
+        let t2 = super::get_current_time();
+        assert_ne!(t1, 0);
+        assert_ne!(t2, 0);
+        assert!(t2 >= t1);
+    }
 }

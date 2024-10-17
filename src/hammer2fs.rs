@@ -12,6 +12,7 @@ pub const HAMMER2_SET_COUNT: usize = 1 << HAMMER2_SET_RADIX;
 pub const HAMMER2_EMBEDDED_BYTES: u64 = 512; // inode blockset/dd size
 
 pub const HAMMER2_PBUFMASK: u64 = HAMMER2_PBUFSIZE - 1;
+pub const HAMMER2_LBUFMASK: u64 = HAMMER2_LBUFSIZE - 1;
 pub const HAMMER2_SEGMASK: u64 = HAMMER2_SEGSIZE - 1;
 
 pub const HAMMER2_UUID_STRING: &str = "5cbb9ad1-862d-11dc-a94d-01301bb8a9f5";
@@ -92,7 +93,7 @@ pub struct Hammer2DirentHead {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Hammer2Blockref {
     pub typ: u8,         // type of underlying item
     pub methods: u8,     // check method & compression method
@@ -112,15 +113,15 @@ pub struct Hammer2Blockref {
 
 impl Default for Hammer2Blockref {
     fn default() -> Self {
-        Self::new()
+        Self::new_empty()
     }
 }
 
 impl Hammer2Blockref {
     #[must_use]
-    pub fn new() -> Self {
+    pub fn new(typ: u8) -> Self {
         Self {
-            typ: 0,
+            typ,
             methods: 0,
             copyid: 0,
             keybits: 0,
@@ -135,6 +136,11 @@ impl Hammer2Blockref {
             embed: [0; 16],
             check: [0; 64],
         }
+    }
+
+    #[must_use]
+    pub fn new_empty() -> Self {
+        Self::new(HAMMER2_BREF_TYPE_EMPTY)
     }
 }
 
@@ -307,7 +313,7 @@ pub const HAMMER2_INODE_MAXNAME: usize = 256; // maximum name in bytes
 pub const HAMMER2_INODE_VERSION_ONE: u16 = 1;
 
 #[repr(C)]
-#[derive(Debug, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Hammer2InodeMeta {
     pub version: u16,    // 0000 inode data version
     pub reserved02: u8,  // 0002
@@ -358,7 +364,7 @@ pub struct Hammer2InodeMeta {
 }
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Hammer2InodeData {
     pub meta: Hammer2InodeMeta,                   // 0000-00FF
     pub filename: [u8; HAMMER2_INODE_MAXNAME],    // 0100-01FF (256 char, unterminated)
@@ -572,10 +578,12 @@ mod tests {
             std::mem::size_of::<super::Hammer2Blockref>(),
             super::HAMMER2_BLOCKREF_BYTES.try_into().unwrap()
         );
+        assert_eq!(super::HAMMER2_BREF_TYPE_EMPTY, 0);
     }
 
     #[test]
     fn test_struct_hammer2_blockref_embed() {
+        assert_eq!(std::mem::size_of::<super::Hammer2DirentHead>(), 16);
         assert_eq!(std::mem::size_of::<super::Hammer2BlockrefEmbedStats>(), 16);
     }
 
@@ -597,7 +605,10 @@ mod tests {
 
     #[test]
     fn test_struct_hammer2_blockset() {
-        assert_eq!(std::mem::size_of::<super::Hammer2Blockset>(), 128 * 4);
+        assert_eq!(
+            std::mem::size_of::<super::Hammer2Blockset>(),
+            128 * super::HAMMER2_SET_COUNT
+        );
     }
 
     #[test]

@@ -20,7 +20,7 @@ pub(crate) fn run(devpath: &str, opt: &Hammer2Options) -> std::io::Result<()> {
             let vol = &mut fso[i];
             let offset = volume::get_volume_data_offset(j);
             if offset < vol.get_size() {
-                let buf = vol.preadx(hammer2fs::HAMMER2_PBUFSIZE, offset)?;
+                let buf = vol.preadx(hammer2fs::HAMMER2_VOLUME_BYTES, offset)?;
                 let voldata = util::align_to::<hammer2fs::Hammer2VolumeData>(&buf);
                 show::print_volume_summary(i, j, voldata.mirror_tid);
                 if sopt.all_volume_data || bests[i].0 == j {

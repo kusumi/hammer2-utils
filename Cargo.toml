@@ -1,11 +1,15 @@
 [package]
 name = "hammer2-utils"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 
 [[bin]]
 name = "newfs_hammer2"
 path = "src/newfs_hammer2/main.rs"
+
+[[bin]]
+name = "fsck_hammer2"
+path = "src/fsck_hammer2/main.rs"
 
 [[bin]]
 name = "hammer2"
@@ -14,12 +18,15 @@ path = "src/hammer2/main.rs"
 [dependencies]
 env_logger = "0.11.5"
 getopts = "0.2.21"
-hex = "0.4.3"
 icrc32 = { git = "https://github.com/kusumi/icrc32" }
 log = "0.4.22"
 nix = "0.29.0"
 num-traits = "0.2.19"
 sha2 = "0.10.8"
+terminal_size = "0.4.0"
 time = { version = "0.3.36", features = ["formatting", "local-offset"] }
 uuid = { version = "1.10.0", features = ["v4", "fast-rng", "macro-diagnostics"] }
 xxhash-rust = { version = "0.8.12", features = ["xxh64"] }
+
+[dev-dependencies]
+hex = "0.4.3"

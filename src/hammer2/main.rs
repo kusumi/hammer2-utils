@@ -74,8 +74,8 @@ fn main() {
         std::process::exit(0);
     }
 
-    if !util::is_os_supported() {
-        log::error!("{} is unsupported", util::get_os_name());
+    if !libhammer2::util::is_os_supported() {
+        log::error!("{} is unsupported", libhammer2::util::get_os_name());
         std::process::exit(1);
     }
 

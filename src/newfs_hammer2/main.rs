@@ -1,6 +1,5 @@
 mod mkfs;
 
-use hammer2_utils::hammer2fs;
 use hammer2_utils::util;
 
 fn usage(prog: &str, gopt: &getopts::Options) {
@@ -95,8 +94,8 @@ fn main() {
         std::process::exit(0);
     }
 
-    if !util::is_os_supported() {
-        log::error!("{} is unsupported", util::get_os_name());
+    if !libhammer2::util::is_os_supported() {
+        log::error!("{} is unsupported", libhammer2::util::get_os_name());
         std::process::exit(1);
     }
 
@@ -104,8 +103,8 @@ fn main() {
     if let Some(v) = matches.opt_str("b") {
         opt.boot_area_size = match mkfs::get_size(
             &v,
-            hammer2fs::HAMMER2_NEWFS_ALIGN,
-            hammer2fs::HAMMER2_BOOT_MAX_BYTES,
+            libhammer2::fs::HAMMER2_NEWFS_ALIGN,
+            libhammer2::fs::HAMMER2_BOOT_MAX_BYTES,
             2,
         ) {
             Ok(v) => v,
@@ -118,8 +117,8 @@ fn main() {
     if let Some(v) = matches.opt_str("r") {
         opt.aux_area_size = match mkfs::get_size(
             &v,
-            hammer2fs::HAMMER2_NEWFS_ALIGN,
-            hammer2fs::HAMMER2_AUX_MAX_BYTES,
+            libhammer2::fs::HAMMER2_NEWFS_ALIGN,
+            libhammer2::fs::HAMMER2_AUX_MAX_BYTES,
             2,
         ) {
             Ok(v) => v,
@@ -137,7 +136,9 @@ fn main() {
                 std::process::exit(1);
             }
         };
-        if !(hammer2fs::HAMMER2_VOL_VERSION_MIN..hammer2fs::HAMMER2_VOL_VERSION_WIP).contains(&v) {
+        if !(libhammer2::fs::HAMMER2_VOL_VERSION_MIN..libhammer2::fs::HAMMER2_VOL_VERSION_WIP)
+            .contains(&v)
+        {
             log::error!("I don't understand how to format HAMMER2 version {v}");
             std::process::exit(1);
         }
@@ -150,10 +151,10 @@ fn main() {
         }
         // use comma separated labels as getopts can't take -L more than once
         for s in &v.split(',').collect::<Vec<&str>>() {
-            if s.len() >= hammer2fs::HAMMER2_INODE_MAXNAME {
+            if s.len() >= libhammer2::fs::HAMMER2_INODE_MAXNAME {
                 log::error!(
                     "Volume label '{s}' is too long ({} chars max)",
-                    hammer2fs::HAMMER2_INODE_MAXNAME - 1
+                    libhammer2::fs::HAMMER2_INODE_MAXNAME - 1
                 );
                 std::process::exit(1);
             }
@@ -182,16 +183,16 @@ fn main() {
         log::error!("You must specify at least one disk device");
         std::process::exit(1);
     }
-    if args.len() > hammer2fs::HAMMER2_MAX_VOLUMES.into() {
+    if args.len() > libhammer2::fs::HAMMER2_MAX_VOLUMES.into() {
         log::error!(
             "The maximum number of volumes is {}",
-            hammer2fs::HAMMER2_MAX_VOLUMES
+            libhammer2::fs::HAMMER2_MAX_VOLUMES
         );
         std::process::exit(1);
     }
 
-    assert_eq!(opt.comp_type, hammer2fs::HAMMER2_COMP_DEFAULT);
-    assert_eq!(opt.check_type, hammer2fs::HAMMER2_CHECK_DEFAULT);
+    assert_eq!(opt.comp_type, libhammer2::fs::HAMMER2_COMP_DEFAULT);
+    assert_eq!(opt.check_type, libhammer2::fs::HAMMER2_CHECK_DEFAULT);
     if let Err(e) = mkfs::mkfs(args, &mut opt) {
         log::error!("{e}");
         std::process::exit(1);

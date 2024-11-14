@@ -1,4 +1,4 @@
-hammer2-utils ([v0.1.1](https://github.com/kusumi/hammer2-utils/releases/tag/v0.1.1))
+hammer2-utils ([v0.2.0](https://github.com/kusumi/hammer2-utils/releases/tag/v0.2.0))
 ========
 
 ## About

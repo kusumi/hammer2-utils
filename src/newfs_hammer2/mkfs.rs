@@ -1,10 +1,3 @@
-use hammer2_utils::hammer2fs;
-use hammer2_utils::ondisk;
-use hammer2_utils::subs;
-use hammer2_utils::util;
-use hammer2_utils::volume;
-use hammer2_utils::xxhash;
-
 #[derive(Debug)]
 pub(crate) enum Hammer2Label {
     #[allow(dead_code)]
@@ -14,10 +7,10 @@ pub(crate) enum Hammer2Label {
     Data,
 }
 
-pub(crate) const MAXLABELS: usize = hammer2fs::HAMMER2_SET_COUNT;
+pub(crate) const MAXLABELS: usize = libhammer2::fs::HAMMER2_SET_COUNT;
 
 fn get_hammer2_version() -> u32 {
-    hammer2fs::HAMMER2_VOL_VERSION_DEFAULT
+    libhammer2::fs::HAMMER2_VOL_VERSION_DEFAULT
 }
 
 #[derive(Debug, Default)]
@@ -44,13 +37,13 @@ impl Hammer2MkfsOptions {
         Self {
             hammer2_version: get_hammer2_version(),
             label: vec!["LOCAL".to_string()],
-            comp_type: hammer2fs::HAMMER2_COMP_DEFAULT, // default LZ4
-            check_type: hammer2fs::HAMMER2_CHECK_DEFAULT, // default xxhash64
+            comp_type: libhammer2::fs::HAMMER2_COMP_DEFAULT, // default LZ4
+            check_type: libhammer2::fs::HAMMER2_CHECK_DEFAULT, // default xxhash64
             default_label_type: None,
             volfsid: uuid::Uuid::new_v4(),
             supclid: uuid::Uuid::new_v4(),
             supfsid: uuid::Uuid::new_v4(),
-            fstype: subs::get_uuid_from_str(hammer2fs::HAMMER2_UUID_STRING),
+            fstype: libhammer2::subs::get_uuid_from_str(libhammer2::fs::HAMMER2_UUID_STRING),
             ..Default::default()
         }
     }
@@ -60,11 +53,11 @@ impl Hammer2MkfsOptions {
             // XXX 0x7fffffffffffffff isn't limitation of HAMMER2
             self.fs_size.push(get_size(
                 s,
-                hammer2fs::HAMMER2_FREEMAP_LEVEL1_SIZE,
+                libhammer2::fs::HAMMER2_FREEMAP_LEVEL1_SIZE,
                 0x7fff_ffff_ffff_ffff,
                 2,
             )?);
-            if self.fs_size.len() >= hammer2fs::HAMMER2_MAX_VOLUMES.into() {
+            if self.fs_size.len() >= libhammer2::fs::HAMMER2_MAX_VOLUMES.into() {
                 break;
             }
         }
@@ -87,18 +80,18 @@ impl Hammer2MkfsOptions {
         // reserved for future filesystem expansion.
         let mut x = self.boot_area_size;
         if x == 0 {
-            x = hammer2fs::HAMMER2_BOOT_NOM_BYTES;
+            x = libhammer2::fs::HAMMER2_BOOT_NOM_BYTES;
             while x > total_size / 20 {
                 x >>= 1;
             }
-            if x < hammer2fs::HAMMER2_BOOT_MIN_BYTES {
-                x = hammer2fs::HAMMER2_BOOT_MIN_BYTES;
+            if x < libhammer2::fs::HAMMER2_BOOT_MIN_BYTES {
+                x = libhammer2::fs::HAMMER2_BOOT_MIN_BYTES;
             }
-        } else if x < hammer2fs::HAMMER2_BOOT_MIN_BYTES {
-            x = hammer2fs::HAMMER2_BOOT_MIN_BYTES;
+        } else if x < libhammer2::fs::HAMMER2_BOOT_MIN_BYTES {
+            x = libhammer2::fs::HAMMER2_BOOT_MIN_BYTES;
         }
-        self.boot_area_size =
-            (x + hammer2fs::HAMMER2_VOLUME_ALIGNMASK) & !hammer2fs::HAMMER2_VOLUME_ALIGNMASK;
+        self.boot_area_size = (x + libhammer2::fs::HAMMER2_VOLUME_ALIGNMASK)
+            & !libhammer2::fs::HAMMER2_VOLUME_ALIGNMASK;
 
         // Calculate defaults for the aux area size and round to the
         // volume alignment boundary.
@@ -107,18 +100,18 @@ impl Hammer2MkfsOptions {
         // reserved for future filesystem expansion.
         let mut x = self.aux_area_size;
         if x == 0 {
-            x = hammer2fs::HAMMER2_AUX_NOM_BYTES;
+            x = libhammer2::fs::HAMMER2_AUX_NOM_BYTES;
             while x > total_size / 20 {
                 x >>= 1;
             }
-            if x < hammer2fs::HAMMER2_AUX_MIN_BYTES {
-                x = hammer2fs::HAMMER2_AUX_MIN_BYTES;
+            if x < libhammer2::fs::HAMMER2_AUX_MIN_BYTES {
+                x = libhammer2::fs::HAMMER2_AUX_MIN_BYTES;
             }
-        } else if x < hammer2fs::HAMMER2_AUX_MIN_BYTES {
-            x = hammer2fs::HAMMER2_AUX_MIN_BYTES;
+        } else if x < libhammer2::fs::HAMMER2_AUX_MIN_BYTES {
+            x = libhammer2::fs::HAMMER2_AUX_MIN_BYTES;
         }
-        self.aux_area_size =
-            (x + hammer2fs::HAMMER2_VOLUME_ALIGNMASK) & !hammer2fs::HAMMER2_VOLUME_ALIGNMASK;
+        self.aux_area_size = (x + libhammer2::fs::HAMMER2_VOLUME_ALIGNMASK)
+            & !libhammer2::fs::HAMMER2_VOLUME_ALIGNMASK;
     }
 }
 
@@ -146,14 +139,14 @@ pub(crate) fn get_size(s: &str, minval: u64, maxval: u64, powerof2: i32) -> nix:
     if val < minval {
         log::error!(
             "Value too small: {s}, min is {}",
-            subs::get_size_string(minval)
+            libhammer2::subs::get_size_string(minval)
         );
         return Err(nix::errno::Errno::EINVAL);
     }
     if val > maxval {
         log::error!(
             "Value too large: {s}, min is {}",
-            subs::get_size_string(maxval)
+            libhammer2::subs::get_size_string(maxval)
         );
         return Err(nix::errno::Errno::EINVAL);
     }
@@ -161,10 +154,10 @@ pub(crate) fn get_size(s: &str, minval: u64, maxval: u64, powerof2: i32) -> nix:
         log::error!("Value not power of 2: {s}");
         return Err(nix::errno::Errno::EINVAL);
     }
-    if (powerof2 & 2) != 0 && (val & hammer2fs::HAMMER2_NEWFS_ALIGNMASK) != 0 {
+    if (powerof2 & 2) != 0 && (val & libhammer2::fs::HAMMER2_NEWFS_ALIGNMASK) != 0 {
         log::error!(
             "Value not an integral multiple of {}K: {s}",
-            hammer2fs::HAMMER2_NEWFS_ALIGN / 1024
+            libhammer2::fs::HAMMER2_NEWFS_ALIGN / 1024
         );
         return Err(nix::errno::Errno::EINVAL);
     }
@@ -172,24 +165,24 @@ pub(crate) fn get_size(s: &str, minval: u64, maxval: u64, powerof2: i32) -> nix:
 }
 
 fn get_current_time() -> u64 {
-    util::get_current_time() * 1_000_000
+    libhammer2::util::get_current_time() * 1_000_000
 }
 
 fn get_buffer() -> Vec<u8> {
-    vec![0; hammer2fs::HAMMER2_PBUFSIZE.try_into().unwrap()]
+    vec![0; libhammer2::fs::HAMMER2_PBUFSIZE.try_into().unwrap()]
 }
 
 fn format_misc(
-    vol: &mut volume::Hammer2Volume,
+    vol: &mut libhammer2::volume::Hammer2Volume,
     opt: &Hammer2MkfsOptions,
     boot_base: u64,
     aux_base: u64,
 ) -> std::io::Result<u64> {
     // Clear the entire 4MB reserve for the first 2G zone.
     let mut tmp_base = 0;
-    for _ in 0..hammer2fs::HAMMER2_ZONE_BLOCKS_SEG {
+    for _ in 0..libhammer2::fs::HAMMER2_ZONE_BLOCKS_SEG {
         vol.pwrite(&get_buffer(), tmp_base)?;
-        tmp_base += hammer2fs::HAMMER2_PBUFSIZE;
+        tmp_base += libhammer2::fs::HAMMER2_PBUFSIZE;
     }
 
     // Make sure alloc_base won't cross the reserved area at the
@@ -198,68 +191,69 @@ fn format_misc(
     // Reserve space for the super-root inode and the root inode.
     // Make sure they are in the same 64K block to simplify our code.
     let alloc_base = aux_base + opt.aux_area_size;
-    assert_eq!(alloc_base & hammer2fs::HAMMER2_PBUFMASK, 0);
-    assert!(alloc_base < hammer2fs::HAMMER2_FREEMAP_LEVEL1_SIZE);
+    assert_eq!(alloc_base & libhammer2::fs::HAMMER2_PBUFMASK, 0);
+    assert!(alloc_base < libhammer2::fs::HAMMER2_FREEMAP_LEVEL1_SIZE);
 
     // Clear the boot/aux area.
     let mut tmp_base = boot_base;
     while tmp_base < alloc_base {
         vol.pwrite(&get_buffer(), tmp_base)?;
-        tmp_base += hammer2fs::HAMMER2_PBUFSIZE;
+        tmp_base += libhammer2::fs::HAMMER2_PBUFSIZE;
     }
     Ok(alloc_base)
 }
 
 fn format_inode(
-    vol: &mut volume::Hammer2Volume,
+    vol: &mut libhammer2::volume::Hammer2Volume,
     opt: &mut Hammer2MkfsOptions,
     alloc_base: u64,
-) -> std::io::Result<(u64, hammer2fs::Hammer2Blockref)> {
+) -> std::io::Result<(u64, libhammer2::fs::Hammer2Blockref)> {
     let now = get_current_time();
 
     let mut buf = get_buffer();
     let mut root_blockref = vec![];
     let mut alloc_base = alloc_base;
-    alloc_base &= !hammer2fs::HAMMER2_PBUFMASK;
+    alloc_base &= !libhammer2::fs::HAMMER2_PBUFMASK;
 
-    let t = alloc_direct(alloc_base, hammer2fs::HAMMER2_INODE_BYTES);
+    let t = alloc_direct(alloc_base, libhammer2::fs::HAMMER2_INODE_BYTES);
     alloc_base = t.0;
     let mut sroot_blockref = t.1;
 
     for s in &opt.label {
-        let t = alloc_direct(alloc_base, hammer2fs::HAMMER2_INODE_BYTES);
+        let t = alloc_direct(alloc_base, libhammer2::fs::HAMMER2_INODE_BYTES);
         alloc_base = t.0;
         let mut bref = t.1;
         assert_eq!(
-            (sroot_blockref.data_off ^ bref.data_off) & !hammer2fs::HAMMER2_PBUFMASK,
+            (sroot_blockref.data_off ^ bref.data_off) & !libhammer2::fs::HAMMER2_PBUFMASK,
             0
         );
 
-        let mut rawip = hammer2fs::Hammer2InodeData::new();
-        rawip.meta.version = hammer2fs::HAMMER2_INODE_VERSION_ONE;
+        let mut rawip = libhammer2::fs::Hammer2InodeData::new();
+        rawip.meta.version = libhammer2::fs::HAMMER2_INODE_VERSION_ONE;
         rawip.meta.ctime = now;
         rawip.meta.mtime = now;
         // rawip.meta.atime = now; NOT IMPL MUST BE ZERO
         rawip.meta.btime = now;
-        rawip.meta.typ = hammer2fs::HAMMER2_OBJTYPE_DIRECTORY;
+        rawip.meta.typ = libhammer2::fs::HAMMER2_OBJTYPE_DIRECTORY;
         rawip.meta.mode = 0o755;
         rawip.meta.inum = 1; // root inode, inumber 1
         rawip.meta.nlinks = 1; // directory link count compat
 
         rawip.meta.name_len = s.len().try_into().unwrap();
         rawip.filename[..s.len()].copy_from_slice(s.as_bytes());
-        rawip.meta.name_key = subs::dirhash(&rawip.filename[..s.len()]);
+        rawip.meta.name_key = libhammer2::subs::dirhash(&rawip.filename[..s.len()]);
 
         // Compression mode and supported copyids.
         //
         // Do not allow compression when creating any "BOOT" label
         // (pfs-create also does the same if the pfs is named "BOOT")
         if s.to_uppercase() == "BOOT" {
-            rawip.meta.comp_algo = hammer2fs::enc_algo(hammer2fs::HAMMER2_COMP_AUTOZERO);
-            rawip.meta.check_algo = hammer2fs::enc_algo(hammer2fs::HAMMER2_CHECK_XXHASH64);
+            rawip.meta.comp_algo = libhammer2::fs::enc_algo(libhammer2::fs::HAMMER2_COMP_AUTOZERO);
+            rawip.meta.check_algo =
+                libhammer2::fs::enc_algo(libhammer2::fs::HAMMER2_CHECK_XXHASH64);
         } else {
-            rawip.meta.comp_algo = hammer2fs::enc_algo(opt.comp_type);
-            rawip.meta.check_algo = hammer2fs::enc_algo(opt.check_type);
+            rawip.meta.comp_algo = libhammer2::fs::enc_algo(opt.comp_type);
+            rawip.meta.check_algo = libhammer2::fs::enc_algo(opt.check_type);
         }
 
         // Note: We leave nmasters set to 0, which means that we
@@ -270,15 +264,15 @@ fn format_inode(
         rawip
             .meta
             .pfs_clid
-            .copy_from_slice(util::any_as_u8_slice(&pfs_clid));
+            .copy_from_slice(libhammer2::util::any_as_u8_slice(&pfs_clid));
         rawip
             .meta
             .pfs_fsid
-            .copy_from_slice(util::any_as_u8_slice(&pfs_fsid));
+            .copy_from_slice(libhammer2::util::any_as_u8_slice(&pfs_fsid));
         opt.pfsclid.push(pfs_clid);
         opt.pfsfsid.push(pfs_fsid);
-        rawip.meta.pfs_type = hammer2fs::HAMMER2_PFSTYPE_MASTER;
-        rawip.meta.op_flags |= hammer2fs::HAMMER2_OPFLAG_PFSROOT;
+        rawip.meta.pfs_type = libhammer2::fs::HAMMER2_PFSTYPE_MASTER;
+        rawip.meta.op_flags |= libhammer2::fs::HAMMER2_OPFLAG_PFSROOT;
 
         // first allocatable inode number
         rawip.meta.pfs_inum = 16;
@@ -291,15 +285,15 @@ fn format_inode(
         // The key field for a PFS root directory's blockref is
         // essentially the name key for the entry.
         bref.key = rawip.meta.name_key;
-        bref.copyid = hammer2fs::HAMMER2_COPYID_LOCAL;
+        bref.copyid = libhammer2::fs::HAMMER2_COPYID_LOCAL;
         bref.keybits = 0;
-        bref.check_as_mut::<hammer2fs::Hammer2BlockrefCheckXxhash64>()
-            .value = xxhash::xxh64(util::any_as_u8_slice(&rawip));
-        bref.typ = hammer2fs::HAMMER2_BREF_TYPE_INODE;
-        bref.methods = hammer2fs::enc_check(hammer2fs::HAMMER2_CHECK_XXHASH64)
-            | hammer2fs::enc_comp(hammer2fs::HAMMER2_COMP_NONE);
+        bref.check_as_mut::<libhammer2::fs::Hammer2BlockrefCheckXxhash64>()
+            .value = libhammer2::xxhash::xxh64(libhammer2::util::any_as_u8_slice(&rawip));
+        bref.typ = libhammer2::fs::HAMMER2_BREF_TYPE_INODE;
+        bref.methods = libhammer2::fs::enc_check(libhammer2::fs::HAMMER2_CHECK_XXHASH64)
+            | libhammer2::fs::enc_comp(libhammer2::fs::HAMMER2_COMP_NONE);
         bref.mirror_tid = 16;
-        bref.flags = hammer2fs::HAMMER2_BREF_FLAG_PFSROOT;
+        bref.flags = libhammer2::fs::HAMMER2_BREF_FLAG_PFSROOT;
 
         copy_inode_to_buffer(&mut buf, &bref, &rawip);
         root_blockref.push(bref);
@@ -312,19 +306,19 @@ fn format_inode(
     // inodes (named via the label).  Inodes contain one blockset which
     // is fully associative so we can put the entry anywhere without
     // having to worry about the hash.  Use index 0.
-    let mut rawip = hammer2fs::Hammer2InodeData::new();
-    rawip.meta.version = hammer2fs::HAMMER2_INODE_VERSION_ONE;
+    let mut rawip = libhammer2::fs::Hammer2InodeData::new();
+    rawip.meta.version = libhammer2::fs::HAMMER2_INODE_VERSION_ONE;
     rawip.meta.ctime = now;
     rawip.meta.mtime = now;
     // rawip.meta.atime = now; NOT IMPL MUST BE ZERO
     rawip.meta.btime = now;
-    rawip.meta.typ = hammer2fs::HAMMER2_OBJTYPE_DIRECTORY;
+    rawip.meta.typ = libhammer2::fs::HAMMER2_OBJTYPE_DIRECTORY;
     rawip.meta.mode = 0o700; // super-root - root only
     rawip.meta.inum = 0; // super root inode, inumber 0
     rawip.meta.nlinks = 2; // directory link count compat
 
-    rawip.meta.comp_algo = hammer2fs::enc_algo(hammer2fs::HAMMER2_COMP_AUTOZERO);
-    rawip.meta.check_algo = hammer2fs::enc_algo(hammer2fs::HAMMER2_CHECK_XXHASH64);
+    rawip.meta.comp_algo = libhammer2::fs::enc_algo(libhammer2::fs::HAMMER2_COMP_AUTOZERO);
+    rawip.meta.check_algo = libhammer2::fs::enc_algo(libhammer2::fs::HAMMER2_CHECK_XXHASH64);
 
     // The super-root is flagged as a PFS and typically given its own
     // random FSID, making it possible to mirror an entire HAMMER2 disk
@@ -338,12 +332,12 @@ fn format_inode(
     rawip
         .meta
         .pfs_clid
-        .copy_from_slice(util::any_as_u8_slice(&opt.supclid));
+        .copy_from_slice(libhammer2::util::any_as_u8_slice(&opt.supclid));
     rawip
         .meta
         .pfs_fsid
-        .copy_from_slice(util::any_as_u8_slice(&opt.supfsid));
-    rawip.meta.pfs_type = hammer2fs::HAMMER2_PFSTYPE_SUPROOT;
+        .copy_from_slice(libhammer2::util::any_as_u8_slice(&opt.supfsid));
+    rawip.meta.pfs_type = libhammer2::fs::HAMMER2_PFSTYPE_SUPROOT;
     let filename = "SUPROOT";
     let name_len = filename.len();
     rawip.filename[..name_len].copy_from_slice(filename.as_bytes());
@@ -357,7 +351,7 @@ fn format_inode(
     // top-level block table at the volume root and doesn't try to
     // create an indirect block, so we are limited to ~4 at filesystem
     // creation time.  More can be added after mounting.
-    let blockset = rawip.u_as_mut::<hammer2fs::Hammer2Blockset>();
+    let blockset = rawip.u_as_mut::<libhammer2::fs::Hammer2Blockset>();
     root_blockref.sort_by_key(|bref| bref.key);
     for i in 0..root_blockref.len() {
         if i != root_blockref.len() - 1 {
@@ -367,35 +361,38 @@ fn format_inode(
     }
 
     // The sroot blockref will be stored in the volume header.
-    sroot_blockref.copyid = hammer2fs::HAMMER2_COPYID_LOCAL;
+    sroot_blockref.copyid = libhammer2::fs::HAMMER2_COPYID_LOCAL;
     sroot_blockref.keybits = 0;
     sroot_blockref
-        .check_as_mut::<hammer2fs::Hammer2BlockrefCheckXxhash64>()
-        .value = xxhash::xxh64(util::any_as_u8_slice(&rawip));
-    sroot_blockref.typ = hammer2fs::HAMMER2_BREF_TYPE_INODE;
-    sroot_blockref.methods = hammer2fs::enc_check(hammer2fs::HAMMER2_CHECK_XXHASH64)
-        | hammer2fs::enc_comp(hammer2fs::HAMMER2_COMP_AUTOZERO);
+        .check_as_mut::<libhammer2::fs::Hammer2BlockrefCheckXxhash64>()
+        .value = libhammer2::xxhash::xxh64(libhammer2::util::any_as_u8_slice(&rawip));
+    sroot_blockref.typ = libhammer2::fs::HAMMER2_BREF_TYPE_INODE;
+    sroot_blockref.methods = libhammer2::fs::enc_check(libhammer2::fs::HAMMER2_CHECK_XXHASH64)
+        | libhammer2::fs::enc_comp(libhammer2::fs::HAMMER2_COMP_AUTOZERO);
     sroot_blockref.mirror_tid = 16;
 
     copy_inode_to_buffer(&mut buf, &sroot_blockref, &rawip);
 
     // Write out the 64K HAMMER2 block containing the root and sroot.
     assert_eq!(
-        sroot_blockref.data_off & !hammer2fs::HAMMER2_PBUFMASK,
-        (alloc_base - 1) & !hammer2fs::HAMMER2_PBUFMASK
+        sroot_blockref.data_off & !libhammer2::fs::HAMMER2_PBUFMASK,
+        (alloc_base - 1) & !libhammer2::fs::HAMMER2_PBUFMASK
     );
-    vol.pwrite(&buf, sroot_blockref.data_off & !hammer2fs::HAMMER2_PBUFMASK)?;
+    vol.pwrite(
+        &buf,
+        sroot_blockref.data_off & !libhammer2::fs::HAMMER2_PBUFMASK,
+    )?;
 
     Ok((alloc_base, sroot_blockref))
 }
 
 fn copy_inode_to_buffer(
     buf: &mut [u8],
-    bref: &hammer2fs::Hammer2Blockref,
-    rawip: &hammer2fs::Hammer2InodeData,
+    bref: &libhammer2::fs::Hammer2Blockref,
+    rawip: &libhammer2::fs::Hammer2InodeData,
 ) {
-    let rawip = util::any_as_u8_slice(rawip);
-    let offset = (bref.data_off & hammer2fs::HAMMER2_OFF_MASK_LO)
+    let rawip = libhammer2::util::any_as_u8_slice(rawip);
+    let offset = (bref.data_off & libhammer2::fs::HAMMER2_OFF_MASK_LO)
         .try_into()
         .unwrap();
     let beg = offset;
@@ -416,31 +413,34 @@ fn copy_inode_to_buffer(
 //
 // Note: The total size is 8MB-aligned to avoid edge cases.
 fn format(
-    fso: &mut ondisk::Hammer2Ondisk,
+    fso: &mut libhammer2::ondisk::Hammer2Ondisk,
     opt: &mut Hammer2MkfsOptions,
     index: usize,
     free_size: u64,
 ) -> std::io::Result<()> {
     const DMSG_PEER_HAMMER2: u8 = 3; // server: h2 mounted volume
-    let boot_base = hammer2fs::HAMMER2_ZONE_SEG;
+    let boot_base = libhammer2::fs::HAMMER2_ZONE_SEG;
     let aux_base = boot_base + opt.boot_area_size;
     let mut alloc_base;
 
     // Make sure we can write to the last usable block.
     let vol = &mut fso[index];
-    vol.pwrite(&get_buffer(), vol.get_size() - hammer2fs::HAMMER2_PBUFSIZE)?;
+    vol.pwrite(
+        &get_buffer(),
+        vol.get_size() - libhammer2::fs::HAMMER2_PBUFSIZE,
+    )?;
 
     // Format misc area and sroot/root inodes for the root volume.
-    let mut sroot_blockset = hammer2fs::Hammer2Blockset::new();
-    if vol.get_id() == hammer2fs::HAMMER2_ROOT_VOLUME {
+    let mut sroot_blockset = libhammer2::fs::Hammer2Blockset::new();
+    if vol.get_id() == libhammer2::fs::HAMMER2_ROOT_VOLUME {
         alloc_base = format_misc(vol, opt, boot_base, aux_base)?;
         let t = format_inode(vol, opt, alloc_base)?;
         alloc_base = t.0;
         sroot_blockset.blockref[0] = t.1;
     } else {
         alloc_base = 0;
-        for i in 0..hammer2fs::HAMMER2_SET_COUNT {
-            sroot_blockset.blockref[i].typ = hammer2fs::HAMMER2_BREF_TYPE_INVALID;
+        for i in 0..libhammer2::fs::HAMMER2_SET_COUNT {
+            sroot_blockset.blockref[i].typ = libhammer2::fs::HAMMER2_BREF_TYPE_INVALID;
         }
     }
 
@@ -449,10 +449,10 @@ fn format(
     // The volume header points to sroot_blockset.  Also be absolutely
     // sure that allocator_beg is set for the root volume.
     let vol = &fso[index];
-    let mut voldata = hammer2fs::Hammer2VolumeData::new();
+    let mut voldata = libhammer2::fs::Hammer2VolumeData::new();
 
-    voldata.magic = hammer2fs::HAMMER2_VOLUME_ID_HBO;
-    if vol.get_id() == hammer2fs::HAMMER2_ROOT_VOLUME {
+    voldata.magic = libhammer2::fs::HAMMER2_VOLUME_ID_HBO;
+    if vol.get_id() == libhammer2::fs::HAMMER2_ROOT_VOLUME {
         voldata.boot_beg = boot_base;
         voldata.boot_end = boot_base + opt.boot_area_size;
         voldata.aux_beg = aux_base;
@@ -462,11 +462,11 @@ fn format(
     voldata.version = opt.hammer2_version;
     voldata.flags = 0;
 
-    if voldata.version >= hammer2fs::HAMMER2_VOL_VERSION_MULTI_VOLUMES {
+    if voldata.version >= libhammer2::fs::HAMMER2_VOL_VERSION_MULTI_VOLUMES {
         voldata.volu_id = vol.get_id();
         voldata.nvolumes = fso.get_nvolumes();
         voldata.total_size = fso.get_total_size();
-        for i in 0..hammer2fs::HAMMER2_MAX_VOLUMES {
+        for i in 0..libhammer2::fs::HAMMER2_MAX_VOLUMES {
             voldata.volu_loff[usize::from(i)] = if i < fso.get_nvolumes() {
                 fso[i.into()].get_offset()
             } else {
@@ -477,16 +477,16 @@ fn format(
 
     voldata
         .fsid
-        .copy_from_slice(util::any_as_u8_slice(&opt.volfsid));
+        .copy_from_slice(libhammer2::util::any_as_u8_slice(&opt.volfsid));
     voldata
         .fstype
-        .copy_from_slice(util::any_as_u8_slice(&opt.fstype));
+        .copy_from_slice(libhammer2::util::any_as_u8_slice(&opt.fstype));
 
     voldata.peer_type = DMSG_PEER_HAMMER2; // LNK_CONN identification
 
-    assert!(vol.get_id() == hammer2fs::HAMMER2_ROOT_VOLUME || alloc_base == 0);
+    assert!(vol.get_id() == libhammer2::fs::HAMMER2_ROOT_VOLUME || alloc_base == 0);
     voldata.allocator_size = free_size;
-    if vol.get_id() == hammer2fs::HAMMER2_ROOT_VOLUME {
+    if vol.get_id() == libhammer2::fs::HAMMER2_ROOT_VOLUME {
         voldata.allocator_free = free_size;
         voldata.allocator_beg = alloc_base;
     }
@@ -494,36 +494,36 @@ fn format(
     voldata.sroot_blockset = sroot_blockset;
     voldata.mirror_tid = 16; // all blockref mirror TIDs set to 16
     voldata.freemap_tid = 16; // all blockref mirror TIDs set to 16
-    voldata.icrc_sects[hammer2fs::HAMMER2_VOL_ICRC_SECT1] = voldata.get_crc(
-        hammer2fs::HAMMER2_VOLUME_ICRC1_OFF,
-        hammer2fs::HAMMER2_VOLUME_ICRC1_SIZE,
+    voldata.icrc_sects[libhammer2::fs::HAMMER2_VOL_ICRC_SECT1] = voldata.get_crc(
+        libhammer2::fs::HAMMER2_VOLUME_ICRC1_OFF,
+        libhammer2::fs::HAMMER2_VOLUME_ICRC1_SIZE,
     );
 
     // Set ICRC_SECT0 after all remaining elements of sect0 have been
     // populated in the volume header.  Note hat ICRC_SECT* (except for
     // SECT0) are part of sect0.
-    voldata.icrc_sects[hammer2fs::HAMMER2_VOL_ICRC_SECT0] = voldata.get_crc(
-        hammer2fs::HAMMER2_VOLUME_ICRC0_OFF,
-        hammer2fs::HAMMER2_VOLUME_ICRC0_SIZE,
+    voldata.icrc_sects[libhammer2::fs::HAMMER2_VOL_ICRC_SECT0] = voldata.get_crc(
+        libhammer2::fs::HAMMER2_VOLUME_ICRC0_OFF,
+        libhammer2::fs::HAMMER2_VOLUME_ICRC0_SIZE,
     );
     voldata.icrc_volheader = voldata.get_crc(
-        hammer2fs::HAMMER2_VOLUME_ICRCVH_OFF,
-        hammer2fs::HAMMER2_VOLUME_ICRCVH_SIZE,
+        libhammer2::fs::HAMMER2_VOLUME_ICRCVH_OFF,
+        libhammer2::fs::HAMMER2_VOLUME_ICRCVH_SIZE,
     );
 
     // Write the volume header and all alternates.
     let vol = &mut fso[index];
-    for i in 0..hammer2fs::HAMMER2_NUM_VOLHDRS {
-        let offset = u64::try_from(i).unwrap() * hammer2fs::HAMMER2_ZONE_BYTES;
+    for i in 0..libhammer2::fs::HAMMER2_NUM_VOLHDRS {
+        let offset = libhammer2::volume::get_volume_data_offset(i);
         if offset >= vol.get_size() {
             break;
         }
-        vol.pwrite(util::any_as_u8_slice(&voldata), offset)?;
+        vol.pwrite(libhammer2::util::any_as_u8_slice(&voldata), offset)?;
     }
     vol.fsync()
 }
 
-fn alloc_direct(base: u64, bytes: u64) -> (u64, hammer2fs::Hammer2Blockref) {
+fn alloc_direct(base: u64, bytes: u64) -> (u64, libhammer2::fs::Hammer2Blockref) {
     assert!(bytes > 0);
     let mut bytes = bytes;
     let mut radix = 0u8;
@@ -534,11 +534,11 @@ fn alloc_direct(base: u64, bytes: u64) -> (u64, hammer2fs::Hammer2Blockref) {
     }
     assert_eq!(bytes, 1);
 
-    if radix < hammer2fs::HAMMER2_RADIX_MIN {
-        radix = hammer2fs::HAMMER2_RADIX_MIN;
+    if radix < libhammer2::fs::HAMMER2_RADIX_MIN {
+        radix = libhammer2::fs::HAMMER2_RADIX_MIN;
     }
 
-    let mut bref = hammer2fs::Hammer2Blockref::new_empty();
+    let mut bref = libhammer2::fs::Hammer2Blockref::new_empty();
     bref.data_off = base | u64::from(radix);
     bref.vradix = radix;
     (base + (1 << radix), bref)
@@ -547,26 +547,26 @@ fn alloc_direct(base: u64, bytes: u64) -> (u64, hammer2fs::Hammer2Blockref) {
 pub(crate) fn mkfs(args: &[String], opt: &mut Hammer2MkfsOptions) -> std::io::Result<()> {
     let nvolumes = args.len();
     assert!(nvolumes >= 1);
-    assert!(nvolumes <= hammer2fs::HAMMER2_MAX_VOLUMES.into());
+    assert!(nvolumes <= libhammer2::fs::HAMMER2_MAX_VOLUMES.into());
 
     // Construct volumes information.
     // 1GB alignment (level1 freemap size) for volumes except for the last.
     // For the last volume, typically 8MB alignment to avoid edge cases for
     // reserved blocks and so raid stripes (if any) operate efficiently.
-    let mut fso = ondisk::Hammer2Ondisk::new(Some(opt.hammer2_version));
+    let mut fso = libhammer2::ondisk::Hammer2Ondisk::new(Some(opt.hammer2_version));
 
     let mut resid = 0;
     let n = opt.fs_size.len();
     if n == 1 {
         resid = opt.fs_size[0];
-        assert!(resid >= hammer2fs::HAMMER2_FREEMAP_LEVEL1_SIZE);
+        assert!(resid >= libhammer2::fs::HAMMER2_FREEMAP_LEVEL1_SIZE);
     } else if n > 1 && nvolumes != n {
         log::error!("Invalid filesystem size count {} vs {}", n, nvolumes);
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
     }
 
     for (i, f) in args.iter().enumerate().take(nvolumes) {
-        let mut size = subs::get_volume_size_from_path(f)?;
+        let mut size = libhammer2::subs::get_volume_size_from_path(f)?;
         // Limit size if a smaller filesystem size is specified.
         match n.cmp(&1) {
             std::cmp::Ordering::Equal => {
@@ -581,7 +581,7 @@ pub(crate) fn mkfs(args: &[String], opt: &mut Hammer2MkfsOptions) -> std::io::Re
             }
             std::cmp::Ordering::Greater => {
                 resid = opt.fs_size[i];
-                assert!(resid >= hammer2fs::HAMMER2_FREEMAP_LEVEL1_SIZE);
+                assert!(resid >= libhammer2::fs::HAMMER2_FREEMAP_LEVEL1_SIZE);
                 if size > resid {
                     size = resid;
                 }
@@ -589,9 +589,9 @@ pub(crate) fn mkfs(args: &[String], opt: &mut Hammer2MkfsOptions) -> std::io::Re
             std::cmp::Ordering::Less => (),
         }
         if i == nvolumes - 1 {
-            size &= !hammer2fs::HAMMER2_VOLUME_ALIGNMASK;
+            size &= !libhammer2::fs::HAMMER2_VOLUME_ALIGNMASK;
         } else {
-            size &= !hammer2fs::HAMMER2_FREEMAP_LEVEL1_MASK;
+            size &= !libhammer2::fs::HAMMER2_FREEMAP_LEVEL1_MASK;
         }
         if size == 0 {
             log::error!("{f} has aligned size of 0");
@@ -606,7 +606,7 @@ pub(crate) fn mkfs(args: &[String], opt: &mut Hammer2MkfsOptions) -> std::io::Re
         println!(
             "Volume {:<15} size {}",
             vol.get_path(),
-            subs::get_size_string(vol.get_size())
+            libhammer2::subs::get_size_string(vol.get_size())
         );
     }
     fso.verify_volumes(false)?;
@@ -626,9 +626,9 @@ pub(crate) fn mkfs(args: &[String], opt: &mut Hammer2MkfsOptions) -> std::io::Re
     //     boundary rather than the ZONE boundary.  LEVEL1 is on 1GB
     //     boundaries rather than 2GB boundaries.  Stick with the LEVEL1
     //     boundary.
-    let reserved_size = ((fso.get_total_size() + hammer2fs::HAMMER2_FREEMAP_LEVEL1_MASK)
-        / hammer2fs::HAMMER2_FREEMAP_LEVEL1_SIZE)
-        * hammer2fs::HAMMER2_ZONE_SEG;
+    let reserved_size = ((fso.get_total_size() + libhammer2::fs::HAMMER2_FREEMAP_LEVEL1_MASK)
+        / libhammer2::fs::HAMMER2_FREEMAP_LEVEL1_SIZE)
+        * libhammer2::fs::HAMMER2_ZONE_SEG;
 
     let x = reserved_size + opt.boot_area_size + opt.aux_area_size;
     if fso.get_total_size() < x {
@@ -646,27 +646,27 @@ pub(crate) fn mkfs(args: &[String], opt: &mut Hammer2MkfsOptions) -> std::io::Re
     println!("version:          {}", opt.hammer2_version);
     println!(
         "total-size:       {} ({} bytes)",
-        subs::get_size_string(fso.get_total_size()),
+        libhammer2::subs::get_size_string(fso.get_total_size()),
         fso.get_total_size()
     );
     println!(
         "boot-area-size:   {} ({} bytes)",
-        subs::get_size_string(opt.boot_area_size),
+        libhammer2::subs::get_size_string(opt.boot_area_size),
         opt.boot_area_size
     );
     println!(
         "aux-area-size:    {} ({} bytes)",
-        subs::get_size_string(opt.aux_area_size),
+        libhammer2::subs::get_size_string(opt.aux_area_size),
         opt.aux_area_size
     );
     println!(
         "topo-reserved:    {} ({} bytes)",
-        subs::get_size_string(reserved_size),
+        libhammer2::subs::get_size_string(reserved_size),
         reserved_size
     );
     println!(
         "free-size:        {} ({} bytes)",
-        subs::get_size_string(free_size),
+        libhammer2::subs::get_size_string(free_size),
         free_size
     );
     println!("vol-fsid:         {}", opt.volfsid);

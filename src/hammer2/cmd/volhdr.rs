@@ -2,7 +2,7 @@ use crate::env;
 use crate::show;
 use crate::Hammer2Options;
 
-pub(crate) fn run(devpath: &str, opt: &Hammer2Options) -> std::io::Result<()> {
+pub(crate) fn run(devpath: &str, opt: &Hammer2Options) -> Result<(), Box<dyn std::error::Error>> {
     let t = env::init();
     let sopt = show::ShowOptions::new(t.0, t.1, t.2, t.3, t.4, 16);
 

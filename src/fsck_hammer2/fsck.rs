@@ -707,7 +707,7 @@ fn print_pfs(ipdata: &libhammer2::fs::Hammer2InodeData) {
     let meta = &ipdata.meta;
     let type_str = if meta.pfs_type == libhammer2::fs::HAMMER2_PFSTYPE_MASTER {
         if meta.pfs_subtype == libhammer2::fs::HAMMER2_PFSSUBTYPE_NONE {
-            "MASTER".to_string()
+            "MASTER"
         } else {
             libhammer2::subs::get_pfs_subtype_string(meta.pfs_subtype)
         }
@@ -742,7 +742,6 @@ fn scan_pfs_blockref(
             } else {
                 if ipdata.meta.op_flags & libhammer2::fs::HAMMER2_OPFLAG_PFSROOT != 0 {
                     v.push(BlockrefMessage::new_from(bref, ipdata));
-                    v.sort_by_key(|m| m.msg_as::<libhammer2::fs::Hammer2InodeData>().filename);
                 } else {
                     panic!("{}", ipdata.meta.inum); // should only see SUPROOT or PFS
                 }
@@ -761,6 +760,7 @@ fn scan_pfs_blockref(
     for bref in &bscan {
         v.extend(scan_pfs_blockref(fso, bref)?);
     }
+    v.sort_by_key(|m| m.msg_as::<libhammer2::fs::Hammer2InodeData>().filename);
     Ok(v)
 }
 

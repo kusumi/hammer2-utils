@@ -1,4 +1,4 @@
-pub(crate) fn run(args: &[String]) {
+pub(crate) fn run(args: &[&str]) {
     for s in args {
         let mut buf = vec![0; 1024]; // 1K extended directory record
         let b = s.as_bytes();

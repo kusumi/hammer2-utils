@@ -10,7 +10,34 @@ pub(crate) enum Hammer2Label {
 pub(crate) const MAXLABELS: usize = libhammer2::fs::HAMMER2_SET_COUNT;
 
 fn get_hammer2_version() -> u32 {
-    libhammer2::fs::HAMMER2_VOL_VERSION_DEFAULT
+    let mut version = libhammer2::fs::HAMMER2_VOL_VERSION_DEFAULT;
+    let mut version_size = std::mem::size_of_val(&version);
+    if unsafe {
+        libhammer2::os::sysctlbyname(
+            c"vfs.hammer2.supported_version"
+                .as_ptr()
+                .cast::<libc::c_char>(),
+            std::ptr::from_mut::<u32>(&mut version).cast::<libc::c_void>(),
+            std::ptr::from_mut::<libc::size_t>(&mut version_size),
+            std::ptr::null_mut(),
+            0,
+        )
+    } == 0
+    {
+        if version >= libhammer2::fs::HAMMER2_VOL_VERSION_WIP {
+            version = libhammer2::fs::HAMMER2_VOL_VERSION_WIP - 1;
+            eprintln!(
+                "WARNING: HAMMER2 VFS supports higher version than I understand.\n\
+                Using default version {version}"
+            );
+        }
+    } else {
+        eprintln!(
+            "WARNING: HAMMER2 VFS not loaded, cannot get version info.\n\
+            Using default version {version}"
+        );
+    }
+    version
 }
 
 #[derive(Debug, Default)]
@@ -544,7 +571,7 @@ fn alloc_direct(base: u64, bytes: u64) -> (u64, libhammer2::fs::Hammer2Blockref)
     (base + (1 << radix), bref)
 }
 
-pub(crate) fn mkfs(args: &[String], opt: &mut Hammer2MkfsOptions) -> std::io::Result<()> {
+pub(crate) fn mkfs(args: &[&str], opt: &mut Hammer2MkfsOptions) -> std::io::Result<()> {
     let nvolumes = args.len();
     assert!(nvolumes >= 1);
     assert!(nvolumes <= libhammer2::fs::HAMMER2_MAX_VOLUMES.into());
@@ -687,6 +714,13 @@ pub(crate) fn mkfs(args: &[String], opt: &mut Hammer2MkfsOptions) -> std::io::Re
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn test_get_hammer2_version() {
+        let version = super::get_hammer2_version();
+        println!("{version}");
+        assert_eq!(version, libhammer2::fs::HAMMER2_VOL_VERSION_MULTI_VOLUMES);
+    }
+
     #[test]
     fn test_get_size_1() {
         assert!(super::get_size("0", u64::MIN, u64::MAX, 1).is_err());

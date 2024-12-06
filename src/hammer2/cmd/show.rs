@@ -2,13 +2,12 @@ use crate::env;
 use crate::show;
 use crate::Hammer2Options;
 
-pub(crate) fn run(devpath: &str, opt: &Hammer2Options) -> std::io::Result<()> {
+pub(crate) fn run(devpath: &str, opt: &Hammer2Options) -> Result<(), Box<dyn std::error::Error>> {
     let t = env::init();
     let sopt = show::ShowOptions::new(t.0, t.1, t.2, t.3, t.4, 0);
 
     let mut fso = libhammer2::ondisk::init(devpath, true)?;
     let best = fso.get_best_volume_data()?[libhammer2::fs::HAMMER2_ROOT_VOLUME as usize];
-    let mut stat = Some(show::FreemapStat::new());
 
     println!(
         "{}",
@@ -31,9 +30,9 @@ pub(crate) fn run(devpath: &str, opt: &Hammer2Options) -> std::io::Result<()> {
             );
             if sopt.all_volume_data || best.0 == i {
                 let mut broot =
-                    libhammer2::fs::Hammer2Blockref::new(libhammer2::fs::HAMMER2_BREF_TYPE_FREEMAP);
+                    libhammer2::fs::Hammer2Blockref::new(libhammer2::fs::HAMMER2_BREF_TYPE_VOLUME);
                 broot.mirror_tid = voldata.mirror_tid;
-                broot.data_off = offset | u64::try_from(libhammer2::fs::HAMMER2_PBUFRADIX).unwrap();
+                broot.data_off = offset | u64::try_from(libhammer2::fs::HAMMER2_PBUFRADIX)?;
                 show::show_blockref(
                     &mut fso,
                     voldata,
@@ -41,7 +40,7 @@ pub(crate) fn run(devpath: &str, opt: &Hammer2Options) -> std::io::Result<()> {
                     i,
                     &broot,
                     false,
-                    &mut stat,
+                    &mut None,
                     &sopt,
                     opt,
                 )?;
@@ -51,30 +50,5 @@ pub(crate) fn run(devpath: &str, opt: &Hammer2Options) -> std::io::Result<()> {
             }
         }
     }
-
-    let stat = stat.unwrap();
-    println!(
-        "Total unallocated storage:   {:6.3}GB ({:6.3}GB in 64KB chunks)",
-        stat.accum16[0] as f64 / libhammer2::subs::G_F64,
-        stat.accum64[0] as f64 / libhammer2::subs::G_F64
-    );
-    println!(
-        "Total possibly free storage: {:6.3}GB ({:6.3}GB in 64KB chunks)",
-        stat.accum16[2] as f64 / libhammer2::subs::G_F64,
-        stat.accum64[2] as f64 / libhammer2::subs::G_F64
-    );
-    println!(
-        "Total allocated storage:     {:6.3}GB ({:6.3}GB in 64KB chunks)",
-        stat.accum16[3] as f64 / libhammer2::subs::G_F64,
-        stat.accum64[3] as f64 / libhammer2::subs::G_F64
-    );
-    println!(
-        "Total unavailable storage:   {:6.3}GB",
-        stat.unavail as f64 / libhammer2::subs::G_F64
-    );
-    println!(
-        "Total freemap storage:       {:6.3}GB",
-        stat.freemap as f64 / libhammer2::subs::G_F64
-    );
     Ok(())
 }

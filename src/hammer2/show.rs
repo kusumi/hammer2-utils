@@ -59,7 +59,7 @@ pub(crate) fn show_volume_data(
     bi: usize,
     sopt: &ShowOptions,
     opt: &Hammer2Options,
-) -> std::io::Result<()> {
+) -> Result<(), Box<dyn std::error::Error>> {
     println!();
     println!("Volume {} header {bi} {{", voldata.volu_id);
     println!("    magic          {:#018x}", voldata.magic);
@@ -249,7 +249,7 @@ pub(crate) fn show_blockref(
     stat: &mut Option<FreemapStat>,
     sopt: &ShowOptions,
     opt: &Hammer2Options,
-) -> std::io::Result<()> {
+) -> Result<(), Box<dyn std::error::Error>> {
     // omit if smaller than mininum mirror_tid threshold
     if bref.mirror_tid < sopt.min_mirror_tid {
         return Ok(());
@@ -433,7 +433,7 @@ pub(crate) fn show_blockref(
         println!();
         false
     } else {
-        show_blockref_data(&media, tab, bref, norecurse)
+        show_blockref_data(&media, tab, bref, norecurse)?
     };
 
     // Update statistics.
@@ -442,11 +442,11 @@ pub(crate) fn show_blockref(
             let bmdata = libhammer2::extra::media_as(&media);
             for i in 0..libhammer2::fs::HAMMER2_FREEMAP_COUNT {
                 let bmdata = &bmdata[i];
-                let data_off = bref.key
-                    + u64::try_from(i).unwrap() * libhammer2::fs::HAMMER2_FREEMAP_LEVEL0_SIZE;
+                let data_off =
+                    bref.key + u64::try_from(i)? * libhammer2::fs::HAMMER2_FREEMAP_LEVEL0_SIZE;
                 if data_off >= voldata.aux_end && data_off < fso.get_total_size() {
                     for j in 0..4 {
-                        count_blocks(bmdata, j, stat);
+                        count_blocks(bmdata, j, stat)?;
                     }
                 } else {
                     stat.unavail += libhammer2::fs::HAMMER2_FREEMAP_LEVEL0_SIZE;
@@ -490,13 +490,13 @@ fn show_blockref_data(
     tab: usize,
     bref: &libhammer2::fs::Hammer2Blockref,
     norecurse: bool,
-) -> bool {
+) -> Result<bool, Box<dyn std::error::Error>> {
     match bref.typ {
         libhammer2::fs::HAMMER2_BREF_TYPE_EMPTY => {
             if norecurse {
                 println!();
             }
-            false
+            Ok(false)
         }
         libhammer2::fs::HAMMER2_BREF_TYPE_INODE => {
             println!("{{");
@@ -616,11 +616,11 @@ fn show_blockref_data(
                 bref.embed_as::<libhammer2::fs::Hammer2BlockrefEmbedStats>()
                     .inode_count
             );
-            true
+            Ok(true)
         }
         libhammer2::fs::HAMMER2_BREF_TYPE_INDIRECT => {
             println!("{{");
-            true
+            Ok(true)
         }
         libhammer2::fs::HAMMER2_BREF_TYPE_DIRENT => {
             println!("{{");
@@ -633,8 +633,7 @@ fn show_blockref_data(
                     std::str::from_utf8(&bref.check[..namelen])
                 } else {
                     std::str::from_utf8(&media[..namelen])
-                }
-                .unwrap()
+                }?
             );
             tab::println!(tab, "inum {:#018x}", dirent.inum);
             tab::println!(tab, "nlen {}", dirent.namlen);
@@ -643,7 +642,7 @@ fn show_blockref_data(
                 "type {}",
                 libhammer2::subs::get_inode_type_string(dirent.typ)
             );
-            true
+            Ok(true)
         }
         libhammer2::fs::HAMMER2_BREF_TYPE_FREEMAP_NODE
         | libhammer2::fs::HAMMER2_BREF_TYPE_FREEMAP_LEAF => {
@@ -651,7 +650,7 @@ fn show_blockref_data(
             let mut tmp = bref.data_off & !libhammer2::fs::HAMMER2_OFF_MASK_RADIX;
             tmp &= libhammer2::fs::HAMMER2_SEGMASK;
             tmp /= libhammer2::fs::HAMMER2_PBUFSIZE;
-            let mut tmp = usize::try_from(tmp).unwrap();
+            let mut tmp = usize::try_from(tmp)?;
             assert!(tmp >= libhammer2::fs::HAMMER2_ZONE_FREEMAP_00);
             assert!(tmp < libhammer2::fs::HAMMER2_ZONE_FREEMAP_END);
             tmp -= libhammer2::fs::HAMMER2_ZONE_FREEMAP_00;
@@ -661,8 +660,8 @@ fn show_blockref_data(
                 let bmdata = libhammer2::extra::media_as::<libhammer2::fs::Hammer2BmapData>(media);
                 for i in 0..libhammer2::fs::HAMMER2_FREEMAP_COUNT {
                     let bmdata = &bmdata[i];
-                    let data_off = bref.key
-                        + u64::try_from(i).unwrap() * libhammer2::fs::HAMMER2_FREEMAP_LEVEL0_SIZE;
+                    let data_off =
+                        bref.key + u64::try_from(i)? * libhammer2::fs::HAMMER2_FREEMAP_LEVEL0_SIZE;
                     tab::println!(
                         tab + 4,
                         "{data_off:016x} {i:04}.{:04x} linear={:06x} avail={:06x} \
@@ -682,7 +681,7 @@ fn show_blockref_data(
                 }
             }
             tab::println!(tab, "}}");
-            true
+            Ok(true)
         }
         libhammer2::fs::HAMMER2_BREF_TYPE_FREEMAP | libhammer2::fs::HAMMER2_BREF_TYPE_VOLUME => {
             let voldata = libhammer2::util::align_to::<libhammer2::fs::Hammer2VolumeData>(media);
@@ -691,19 +690,23 @@ fn show_blockref_data(
                 voldata.mirror_tid, voldata.freemap_tid
             );
             println!("{{");
-            true
+            Ok(true)
         }
         _ => {
             println!();
-            false
+            Ok(false)
         }
     }
 }
 
-fn count_blocks(bmap: &libhammer2::fs::Hammer2BmapData, value: usize, stat: &mut FreemapStat) {
+fn count_blocks(
+    bmap: &libhammer2::fs::Hammer2BmapData,
+    value: usize,
+    stat: &mut FreemapStat,
+) -> Result<(), Box<dyn std::error::Error>> {
     let bits = std::mem::size_of::<u64>() * 8;
     assert_eq!(bits, 64);
-    let value16 = u64::try_from(value).unwrap();
+    let value16 = u64::try_from(value)?;
     assert!(value16 < 4);
     let value64 = value16 << 6 | value16 << 4 | value16 << 2 | value16;
     assert!(value64 < 256);
@@ -730,4 +733,5 @@ fn count_blocks(bmap: &libhammer2::fs::Hammer2BmapData, value: usize, stat: &mut
             j += 8;
         }
     }
+    Ok(())
 }

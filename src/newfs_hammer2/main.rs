@@ -178,7 +178,7 @@ fn main() {
     }
     opt.debug = matches.opt_present("d");
 
-    let args = &matches.free;
+    let args: Vec<&str> = matches.free.iter().map(String::as_str).collect();
     if args.is_empty() {
         log::error!("You must specify at least one disk device");
         std::process::exit(1);
@@ -193,7 +193,7 @@ fn main() {
 
     assert_eq!(opt.comp_type, libhammer2::fs::HAMMER2_COMP_DEFAULT);
     assert_eq!(opt.check_type, libhammer2::fs::HAMMER2_CHECK_DEFAULT);
-    if let Err(e) = mkfs::mkfs(args, &mut opt) {
+    if let Err(e) = mkfs::mkfs(&args, &mut opt) {
         log::error!("{e}");
         std::process::exit(1);
     }

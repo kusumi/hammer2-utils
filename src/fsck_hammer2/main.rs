@@ -28,7 +28,7 @@ fn usage(prog: &str, gopt: &getopts::Options) {
     print!(
         "{}",
         gopt.usage(&format!(
-            "usage: {prog} [-f] [-v] [-q] [-e] [-b] [-p] [-P] \
+            "{prog} [-f] [-v] [-q] [-e] [-b] [-p] [-P] \
             [-l pfs_names] [-c cache_count] special"
         ))
     );

@@ -53,6 +53,7 @@ pub(crate) fn print_volume_summary(id: usize, index: usize, mirror_tid: u64) {
     println!("Volume {id} header {index}: mirror_tid={mirror_tid:016x}");
 }
 
+#[allow(clippy::too_many_lines)]
 pub(crate) fn show_volume_data(
     fso: &mut libhammer2::ondisk::Hammer2Ondisk,
     voldata: &libhammer2::fs::Hammer2VolumeData,
@@ -239,6 +240,7 @@ pub(crate) fn show_volume_data(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_lines)]
 pub(crate) fn show_blockref(
     fso: &mut libhammer2::ondisk::Hammer2Ondisk,
     voldata: &libhammer2::fs::Hammer2VolumeData,
@@ -306,7 +308,7 @@ pub(crate) fn show_blockref(
 
     let id = fso
         .get_volume(bref.data_off)
-        .ok_or_else(libhammer2::util::notfound)?
+        .ok_or_else(libhammer2::util::enoent)?
         .get_id();
     if opt.quiet {
         tab::print!(
@@ -485,6 +487,7 @@ pub(crate) fn show_blockref(
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 fn show_blockref_data(
     media: &[u8],
     tab: usize,

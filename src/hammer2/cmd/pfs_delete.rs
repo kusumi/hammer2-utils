@@ -30,11 +30,11 @@ pub(crate) fn run(f: &str, args: &[&str]) -> Result<(), Box<dyn std::error::Erro
         let v = if f.is_empty() {
             let v = get_mount_handle(&mut pfs)?;
             if v.is_empty() {
-                eprintln!("{}: {name} not found", format_prefix(name));
+                log::error!("{}: {name} not found", format_prefix(name));
                 return Err(Box::new(nix::errno::Errno::ENOENT));
             }
             if v.len() > 1 {
-                eprintln!(
+                log::error!(
                     "{}: Duplicate PFS name, must specify mount",
                     format_prefix(name)
                 );

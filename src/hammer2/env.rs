@@ -75,6 +75,7 @@ pub(crate) fn init() -> (bool, usize, usize, u64, u64) {
 
 #[cfg(test)]
 mod tests {
+    #[allow(clippy::unnecessary_wraps)]
     fn ok(s: &str) -> Result<String, std::env::VarError> {
         Ok(s.to_string())
     }

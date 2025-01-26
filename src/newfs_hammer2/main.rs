@@ -12,6 +12,7 @@ fn usage(prog: &str, gopt: &getopts::Options) {
     );
 }
 
+#[allow(clippy::too_many_lines)]
 fn main() {
     if let Err(e) = util::init_std_logger() {
         eprintln!("{e}");

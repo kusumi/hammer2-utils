@@ -222,6 +222,7 @@ fn main() {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn cmd_run(
     cmd: &str,
     args: &[&str],

@@ -490,6 +490,7 @@ fn verify_volume_header(voldata: &libhammer2::fs::Hammer2VolumeData) -> std::io:
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 fn verify_blockref(
     fso: &mut libhammer2::ondisk::Hammer2Ondisk,
     bref: &libhammer2::fs::Hammer2Blockref,
@@ -764,6 +765,7 @@ fn scan_pfs_blockref(
     Ok(v)
 }
 
+#[allow(clippy::too_many_lines)]
 fn format_media(tab: usize, bref: &libhammer2::fs::Hammer2Blockref, media: &[u8]) -> Vec<String> {
     let mut v = vec![];
     match bref.typ {

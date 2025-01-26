@@ -43,7 +43,7 @@ pub(crate) fn run(
     );
     match unsafe { pfs_create(fp.as_raw_fd(), &mut pfs) } {
         Err(nix::errno::Errno::EEXIST) => {
-            eprintln!(
+            log::error!(
                 "NOTE: Typically the same name is used for cluster elements on \
                 different mounts,\n      \
                 but cluster elements on the same mount require unique names.\n\

@@ -14,9 +14,7 @@ fn get_hammer2_version() -> u32 {
     let mut version_size = std::mem::size_of_val(&version);
     if unsafe {
         libhammer2::os::sysctlbyname(
-            c"vfs.hammer2.supported_version"
-                .as_ptr()
-                .cast::<libc::c_char>(),
+            c"vfs.hammer2.supported_version".as_ptr(),
             std::ptr::from_mut::<u32>(&mut version).cast::<libc::c_void>(),
             std::ptr::from_mut::<libc::size_t>(&mut version_size),
             std::ptr::null_mut(),
@@ -230,6 +228,7 @@ fn format_misc(
     Ok(alloc_base)
 }
 
+#[allow(clippy::too_many_lines)]
 fn format_inode(
     vol: &mut libhammer2::volume::Hammer2Volume,
     opt: &mut Hammer2MkfsOptions,
@@ -571,6 +570,7 @@ fn alloc_direct(base: u64, bytes: u64) -> (u64, libhammer2::fs::Hammer2Blockref)
     (base + (1 << radix), bref)
 }
 
+#[allow(clippy::too_many_lines)]
 pub(crate) fn mkfs(args: &[&str], opt: &mut Hammer2MkfsOptions) -> std::io::Result<()> {
     let nvolumes = args.len();
     assert!(nvolumes >= 1);

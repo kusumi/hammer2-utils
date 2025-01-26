@@ -1,11 +1,15 @@
 [package]
 name = "hammer2-utils"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 
 [[bin]]
 name = "newfs_hammer2"
 path = "src/newfs_hammer2/main.rs"
+
+[[bin]]
+name = "mount_hammer2"
+path = "src/mount_hammer2/main.rs"
 
 [[bin]]
 name = "fsck_hammer2"
@@ -22,7 +26,7 @@ icrc32 = { git = "https://github.com/kusumi/icrc32" }
 libc = "0.2.166"
 libhammer2 = { git = "https://github.com/kusumi/libhammer2" }
 log = "0.4.22"
-nix = { version = "0.29.0", features = ["ioctl"] }
+nix = { version = "0.29.0", features = ["ioctl", "mount"] }
 num-traits = "0.2.19"
 time = "0.3.36"
 uuid = { version = "1.10.0", features = ["v4", "fast-rng", "macro-diagnostics"] }

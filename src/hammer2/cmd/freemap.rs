@@ -13,13 +13,13 @@ pub(crate) fn run(devpath: &str, opt: &Hammer2Options) -> Result<(), Box<dyn std
     println!(
         "{}",
         fso.get_root_volume()
-            .ok_or_else(libhammer2::util::notfound)?
+            .ok_or_else(libhammer2::util::enoent)?
             .get_path()
     );
     for i in 0..libhammer2::fs::HAMMER2_NUM_VOLHDRS {
         let vol = fso
             .get_root_volume_mut()
-            .ok_or_else(libhammer2::util::notfound)?;
+            .ok_or_else(libhammer2::util::enoent)?;
         let offset = libhammer2::volume::get_volume_data_offset(i);
         if offset < vol.get_size() {
             let buf = vol.preadx(libhammer2::fs::HAMMER2_VOLUME_BYTES, offset)?;

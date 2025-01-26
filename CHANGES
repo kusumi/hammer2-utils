@@ -1,3 +1,8 @@
+v0.2.2
+======
+- Add hammer2(8) recover directive
+- Add mount_hammer2(8)
+
 v0.2.1
 ======
 - Add hammer2(8) directives

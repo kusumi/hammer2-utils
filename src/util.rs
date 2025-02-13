@@ -12,15 +12,9 @@ pub fn print_version() {
     println!("{}", get_version_string());
 }
 
-/// # Panics
 #[must_use]
-pub fn get_basename(f: &str) -> String {
-    std::path::Path::new(&f)
-        .file_name()
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .to_string()
+pub fn get_basename(f: &str) -> Option<String> {
+    Some(std::path::Path::new(&f).file_name()?.to_str()?.to_string())
 }
 
 const DEBUG: &str = "DEBUG";

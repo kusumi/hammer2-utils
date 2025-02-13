@@ -29,7 +29,7 @@ pub(crate) fn usage(prog: &str, gopt: &getopts::Options) {
     );
 }
 
-pub(crate) fn mount(matches: &getopts::Matches) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn mount(matches: &getopts::Matches) -> hammer2_utils::Result<()> {
     let mut mntflags = nix::mount::MntFlags::empty();
     let mut opts = vec![];
 

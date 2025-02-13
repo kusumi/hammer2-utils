@@ -5,27 +5,21 @@ fn format_prefix(name: &str) -> String {
 }
 
 fn get_mount_handle(
-    pfs: &mut libhammer2::ioctl::Hammer2IocPfs,
-) -> Result<Vec<std::fs::File>, Box<dyn std::error::Error>> {
+    pfs: &mut libhammer2::ioctl::IocPfs,
+) -> hammer2_utils::Result<Vec<std::fs::File>> {
     let mut v = vec![];
     for f in &libhammer2::subs::get_hammer2_mounts()? {
-        let fp = libhammer2::subs::get_ioctl_handle(f)?;
-        nix::ioctl_readwrite!(
-            pfs_lookup,
-            libhammer2::ioctl::HAMMER2IOC,
-            libhammer2::ioctl::HAMMER2IOC_PFS_LOOKUP,
-            libhammer2::ioctl::Hammer2IocPfs
-        );
-        if unsafe { pfs_lookup(fp.as_raw_fd(), pfs) }.is_ok() {
+        let fp = super::get_ioctl_handle(f)?;
+        if unsafe { libhammer2::ioctl::pfs_lookup(fp.as_raw_fd(), pfs) }.is_ok() {
             v.push(fp);
         }
     }
     Ok(v)
 }
 
-pub(crate) fn run(f: &str, args: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn run(f: &str, args: &[&str]) -> hammer2_utils::Result<()> {
     for name in args {
-        let mut pfs = libhammer2::ioctl::Hammer2IocPfs::new();
+        let mut pfs = libhammer2::ioctl::IocPfs::new();
         pfs.copy_name(name.as_bytes());
         let v = if f.is_empty() {
             let v = get_mount_handle(&mut pfs)?;
@@ -42,15 +36,9 @@ pub(crate) fn run(f: &str, args: &[&str]) -> Result<(), Box<dyn std::error::Erro
             }
             v
         } else {
-            vec![libhammer2::subs::get_ioctl_handle(f)?]
+            vec![super::get_ioctl_handle(f)?]
         };
-        nix::ioctl_readwrite!(
-            pfs_delete,
-            libhammer2::ioctl::HAMMER2IOC,
-            libhammer2::ioctl::HAMMER2IOC_PFS_DELETE,
-            libhammer2::ioctl::Hammer2IocPfs
-        );
-        unsafe { pfs_delete(v[0].as_raw_fd(), &mut pfs) }?;
+        unsafe { libhammer2::ioctl::pfs_delete(v[0].as_raw_fd(), &mut pfs) }?;
         println!("{}: SUCCESS", format_prefix(name));
     }
     Ok(())

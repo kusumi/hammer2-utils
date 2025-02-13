@@ -1,9 +1,7 @@
 mod fsck;
 
-use hammer2_utils::util;
-
 #[derive(Debug, Default)]
-struct Hammer2FsckOptions {
+struct Opt {
     verbose: bool,
     quiet: bool,
     debug: bool,
@@ -16,7 +14,7 @@ struct Hammer2FsckOptions {
     blockref_cache_count: usize,
 }
 
-impl Hammer2FsckOptions {
+impl Opt {
     fn new() -> Self {
         Self {
             ..Default::default()
@@ -35,13 +33,16 @@ fn usage(prog: &str, gopt: &getopts::Options) {
 }
 
 fn main() {
-    if let Err(e) = util::init_std_logger() {
+    if let Err(e) = hammer2_utils::util::init_std_logger() {
         eprintln!("{e}");
         std::process::exit(1);
     }
 
     let args: Vec<String> = std::env::args().collect();
-    let prog = &util::get_basename(&args[0]);
+    let Some(prog) = &hammer2_utils::util::get_basename(&args[0]) else {
+        log::error!("{args:?}");
+        std::process::exit(1);
+    };
 
     let mut gopt = getopts::Options::new();
     gopt.optflag("v", "", "Enable verbose flag");
@@ -66,7 +67,7 @@ fn main() {
         }
     };
     if matches.opt_present("version") {
-        util::print_version();
+        hammer2_utils::util::print_version();
         std::process::exit(0);
     }
     if matches.opt_present("help") {
@@ -79,7 +80,7 @@ fn main() {
         std::process::exit(1);
     }
 
-    let mut opt = Hammer2FsckOptions::new();
+    let mut opt = Opt::new();
     if matches.opt_present("v") {
         if opt.quiet {
             opt.quiet = false;

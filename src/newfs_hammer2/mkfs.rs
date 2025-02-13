@@ -1,5 +1,5 @@
 #[derive(Debug)]
-pub(crate) enum Hammer2Label {
+pub(crate) enum Label {
     #[allow(dead_code)]
     Boot,
     #[allow(dead_code)]
@@ -24,14 +24,14 @@ fn get_hammer2_version() -> u32 {
     {
         if version >= libhammer2::fs::HAMMER2_VOL_VERSION_WIP {
             version = libhammer2::fs::HAMMER2_VOL_VERSION_WIP - 1;
-            eprintln!(
-                "WARNING: HAMMER2 VFS supports higher version than I understand.\n\
+            log::warn!(
+                "HAMMER2 VFS supports higher version than I understand.\n\
                 Using default version {version}"
             );
         }
     } else {
-        eprintln!(
-            "WARNING: HAMMER2 VFS not loaded, cannot get version info.\n\
+        log::warn!(
+            "HAMMER2 VFS not loaded, cannot get version info.\n\
             Using default version {version}"
         );
     }
@@ -39,7 +39,7 @@ fn get_hammer2_version() -> u32 {
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct Hammer2MkfsOptions {
+pub(crate) struct Opt {
     pub(crate) hammer2_version: u32,
     pub(crate) fstype: uuid::Uuid,
     pub(crate) volfsid: uuid::Uuid,
@@ -53,11 +53,11 @@ pub(crate) struct Hammer2MkfsOptions {
     pub(crate) label: Vec<String>,
     pub(crate) comp_type: u8,
     pub(crate) check_type: u8,
-    pub(crate) default_label_type: Option<Hammer2Label>,
+    pub(crate) default_label_type: Option<Label>,
     pub(crate) debug: bool,
 }
 
-impl Hammer2MkfsOptions {
+impl Opt {
     pub(crate) fn new() -> Self {
         Self {
             hammer2_version: get_hammer2_version(),
@@ -68,7 +68,8 @@ impl Hammer2MkfsOptions {
             volfsid: uuid::Uuid::new_v4(),
             supclid: uuid::Uuid::new_v4(),
             supfsid: uuid::Uuid::new_v4(),
-            fstype: libhammer2::subs::get_uuid_from_str(libhammer2::fs::HAMMER2_UUID_STRING),
+            fstype: libhammer2::subs::get_uuid_from_str(libhammer2::fs::HAMMER2_UUID_STRING)
+                .unwrap(),
             ..Default::default()
         }
     }
@@ -92,9 +93,9 @@ impl Hammer2MkfsOptions {
     pub(crate) fn adjust(&mut self, total_size: u64) {
         // Adjust Label[].
         match self.default_label_type {
-            Some(Hammer2Label::Boot) => self.label.push("BOOT".to_string()),
-            Some(Hammer2Label::Root) => self.label.push("ROOT".to_string()),
-            Some(Hammer2Label::Data) => self.label.push("DATA".to_string()),
+            Some(Label::Boot) => self.label.push("BOOT".to_string()),
+            Some(Label::Root) => self.label.push("ROOT".to_string()),
+            Some(Label::Data) => self.label.push("DATA".to_string()),
             None => (),
         }
 
@@ -189,24 +190,24 @@ pub(crate) fn get_size(s: &str, minval: u64, maxval: u64, powerof2: i32) -> nix:
     Ok(val)
 }
 
-fn get_current_time() -> u64 {
-    libhammer2::util::get_current_time() * 1_000_000
+fn get_current_time() -> Result<u64, std::time::SystemTimeError> {
+    Ok(libhammer2::util::get_current_time()? * 1_000_000)
 }
 
-fn get_buffer() -> Vec<u8> {
-    vec![0; libhammer2::fs::HAMMER2_PBUFSIZE.try_into().unwrap()]
+fn get_buffer() -> hammer2_utils::Result<Vec<u8>> {
+    Ok(vec![0; libhammer2::fs::HAMMER2_PBUFSIZE.try_into()?])
 }
 
 fn format_misc(
-    vol: &mut libhammer2::volume::Hammer2Volume,
-    opt: &Hammer2MkfsOptions,
+    vol: &mut libhammer2::volume::Volume,
+    opt: &Opt,
     boot_base: u64,
     aux_base: u64,
-) -> std::io::Result<u64> {
+) -> hammer2_utils::Result<u64> {
     // Clear the entire 4MB reserve for the first 2G zone.
     let mut tmp_base = 0;
     for _ in 0..libhammer2::fs::HAMMER2_ZONE_BLOCKS_SEG {
-        vol.pwrite(&get_buffer(), tmp_base)?;
+        vol.pwrite(&get_buffer()?, tmp_base)?;
         tmp_base += libhammer2::fs::HAMMER2_PBUFSIZE;
     }
 
@@ -222,7 +223,7 @@ fn format_misc(
     // Clear the boot/aux area.
     let mut tmp_base = boot_base;
     while tmp_base < alloc_base {
-        vol.pwrite(&get_buffer(), tmp_base)?;
+        vol.pwrite(&get_buffer()?, tmp_base)?;
         tmp_base += libhammer2::fs::HAMMER2_PBUFSIZE;
     }
     Ok(alloc_base)
@@ -230,23 +231,23 @@ fn format_misc(
 
 #[allow(clippy::too_many_lines)]
 fn format_inode(
-    vol: &mut libhammer2::volume::Hammer2Volume,
-    opt: &mut Hammer2MkfsOptions,
+    vol: &mut libhammer2::volume::Volume,
+    opt: &mut Opt,
     alloc_base: u64,
-) -> std::io::Result<(u64, libhammer2::fs::Hammer2Blockref)> {
-    let now = get_current_time();
+) -> hammer2_utils::Result<(u64, libhammer2::fs::Hammer2Blockref)> {
+    let now = get_current_time()?;
 
-    let mut buf = get_buffer();
+    let mut buf = get_buffer()?;
     let mut root_blockref = vec![];
     let mut alloc_base = alloc_base;
     alloc_base &= !libhammer2::fs::HAMMER2_PBUFMASK;
 
-    let t = alloc_direct(alloc_base, libhammer2::fs::HAMMER2_INODE_BYTES);
+    let t = alloc_direct(alloc_base, libhammer2::fs::HAMMER2_INODE_BYTES)?;
     alloc_base = t.0;
     let mut sroot_blockref = t.1;
 
     for s in &opt.label {
-        let t = alloc_direct(alloc_base, libhammer2::fs::HAMMER2_INODE_BYTES);
+        let t = alloc_direct(alloc_base, libhammer2::fs::HAMMER2_INODE_BYTES)?;
         alloc_base = t.0;
         let mut bref = t.1;
         assert_eq!(
@@ -265,7 +266,7 @@ fn format_inode(
         rawip.meta.inum = 1; // root inode, inumber 1
         rawip.meta.nlinks = 1; // directory link count compat
 
-        rawip.meta.name_len = s.len().try_into().unwrap();
+        rawip.meta.name_len = s.len().try_into()?;
         rawip.filename[..s.len()].copy_from_slice(s.as_bytes());
         rawip.meta.name_key = libhammer2::subs::dirhash(&rawip.filename[..s.len()]);
 
@@ -321,7 +322,7 @@ fn format_inode(
         bref.mirror_tid = 16;
         bref.flags = libhammer2::fs::HAMMER2_BREF_FLAG_PFSROOT;
 
-        copy_inode_to_buffer(&mut buf, &bref, &rawip);
+        copy_inode_to_buffer(&mut buf, &bref, &rawip)?;
         root_blockref.push(bref);
     }
 
@@ -368,7 +369,7 @@ fn format_inode(
     let name_len = filename.len();
     rawip.filename[..name_len].copy_from_slice(filename.as_bytes());
     rawip.meta.name_key = 0;
-    rawip.meta.name_len = name_len.try_into().unwrap();
+    rawip.meta.name_len = name_len.try_into()?;
 
     // The super-root has an inode number of 0
     rawip.meta.pfs_inum = 0;
@@ -397,7 +398,7 @@ fn format_inode(
         | libhammer2::fs::enc_comp(libhammer2::fs::HAMMER2_COMP_AUTOZERO);
     sroot_blockref.mirror_tid = 16;
 
-    copy_inode_to_buffer(&mut buf, &sroot_blockref, &rawip);
+    copy_inode_to_buffer(&mut buf, &sroot_blockref, &rawip)?;
 
     // Write out the 64K HAMMER2 block containing the root and sroot.
     assert_eq!(
@@ -416,14 +417,13 @@ fn copy_inode_to_buffer(
     buf: &mut [u8],
     bref: &libhammer2::fs::Hammer2Blockref,
     rawip: &libhammer2::fs::Hammer2InodeData,
-) {
+) -> hammer2_utils::Result<()> {
     let rawip = libhammer2::util::any_as_u8_slice(rawip);
-    let offset = (bref.data_off & libhammer2::fs::HAMMER2_OFF_MASK_LO)
-        .try_into()
-        .unwrap();
+    let offset = (bref.data_off & libhammer2::fs::HAMMER2_OFF_MASK_LO).try_into()?;
     let beg = offset;
     let end = offset + rawip.len();
     buf[beg..end].copy_from_slice(rawip);
+    Ok(())
 }
 
 // Create the volume header, the super-root directory inode, and
@@ -439,11 +439,11 @@ fn copy_inode_to_buffer(
 //
 // Note: The total size is 8MB-aligned to avoid edge cases.
 fn format(
-    fso: &mut libhammer2::ondisk::Hammer2Ondisk,
-    opt: &mut Hammer2MkfsOptions,
+    fso: &mut libhammer2::ondisk::Ondisk,
+    opt: &mut Opt,
     index: usize,
     free_size: u64,
-) -> std::io::Result<()> {
+) -> hammer2_utils::Result<()> {
     const DMSG_PEER_HAMMER2: u8 = 3; // server: h2 mounted volume
     let boot_base = libhammer2::fs::HAMMER2_ZONE_SEG;
     let aux_base = boot_base + opt.boot_area_size;
@@ -452,13 +452,13 @@ fn format(
     // Make sure we can write to the last usable block.
     let vol = &mut fso[index];
     vol.pwrite(
-        &get_buffer(),
+        &get_buffer()?,
         vol.get_size() - libhammer2::fs::HAMMER2_PBUFSIZE,
     )?;
 
     // Format misc area and sroot/root inodes for the root volume.
     let mut sroot_blockset = libhammer2::fs::Hammer2Blockset::new();
-    if vol.get_id() == libhammer2::fs::HAMMER2_ROOT_VOLUME {
+    if vol.get_id() == libhammer2::fs::HAMMER2_ROOT_VOLUME.into() {
         alloc_base = format_misc(vol, opt, boot_base, aux_base)?;
         let t = format_inode(vol, opt, alloc_base)?;
         alloc_base = t.0;
@@ -478,7 +478,7 @@ fn format(
     let mut voldata = libhammer2::fs::Hammer2VolumeData::new();
 
     voldata.magic = libhammer2::fs::HAMMER2_VOLUME_ID_HBO;
-    if vol.get_id() == libhammer2::fs::HAMMER2_ROOT_VOLUME {
+    if vol.get_id() == libhammer2::fs::HAMMER2_ROOT_VOLUME.into() {
         voldata.boot_beg = boot_base;
         voldata.boot_end = boot_base + opt.boot_area_size;
         voldata.aux_beg = aux_base;
@@ -489,12 +489,12 @@ fn format(
     voldata.flags = 0;
 
     if voldata.version >= libhammer2::fs::HAMMER2_VOL_VERSION_MULTI_VOLUMES {
-        voldata.volu_id = vol.get_id();
-        voldata.nvolumes = fso.get_nvolumes();
+        voldata.volu_id = vol.get_id().try_into()?;
+        voldata.nvolumes = fso.get_nvolumes().try_into()?;
         voldata.total_size = fso.get_total_size();
-        for i in 0..libhammer2::fs::HAMMER2_MAX_VOLUMES {
-            voldata.volu_loff[usize::from(i)] = if i < fso.get_nvolumes() {
-                fso[i.into()].get_offset()
+        for i in 0..libhammer2::fs::HAMMER2_MAX_VOLUMES.into() {
+            voldata.volu_loff[i] = if i < fso.get_nvolumes() {
+                fso[i].get_offset()
             } else {
                 u64::MAX
             };
@@ -510,9 +510,9 @@ fn format(
 
     voldata.peer_type = DMSG_PEER_HAMMER2; // LNK_CONN identification
 
-    assert!(vol.get_id() == libhammer2::fs::HAMMER2_ROOT_VOLUME || alloc_base == 0);
+    assert!(vol.get_id() == libhammer2::fs::HAMMER2_ROOT_VOLUME.into() || alloc_base == 0);
     voldata.allocator_size = free_size;
-    if vol.get_id() == libhammer2::fs::HAMMER2_ROOT_VOLUME {
+    if vol.get_id() == libhammer2::fs::HAMMER2_ROOT_VOLUME.into() {
         voldata.allocator_free = free_size;
         voldata.allocator_beg = alloc_base;
     }
@@ -546,32 +546,35 @@ fn format(
         }
         vol.pwrite(libhammer2::util::any_as_u8_slice(&voldata), offset)?;
     }
-    vol.fsync()
+    Ok(vol.fsync()?)
 }
 
-fn alloc_direct(base: u64, bytes: u64) -> (u64, libhammer2::fs::Hammer2Blockref) {
+fn alloc_direct(
+    base: u64,
+    bytes: u64,
+) -> hammer2_utils::Result<(u64, libhammer2::fs::Hammer2Blockref)> {
     assert!(bytes > 0);
     let mut bytes = bytes;
     let mut radix = 0u8;
 
-    while bytes & 1 == 0 {
+    while (bytes & 1) == 0 {
         bytes >>= 1;
         radix += 1;
     }
     assert_eq!(bytes, 1);
 
-    if radix < libhammer2::fs::HAMMER2_RADIX_MIN {
-        radix = libhammer2::fs::HAMMER2_RADIX_MIN;
+    if radix < libhammer2::fs::HAMMER2_RADIX_MIN.try_into()? {
+        radix = libhammer2::fs::HAMMER2_RADIX_MIN.try_into()?;
     }
 
     let mut bref = libhammer2::fs::Hammer2Blockref::new_empty();
     bref.data_off = base | u64::from(radix);
     bref.vradix = radix;
-    (base + (1 << radix), bref)
+    Ok((base + (1 << radix), bref))
 }
 
 #[allow(clippy::too_many_lines)]
-pub(crate) fn mkfs(args: &[&str], opt: &mut Hammer2MkfsOptions) -> std::io::Result<()> {
+pub(crate) fn mkfs(args: &[&str], opt: &mut Opt) -> hammer2_utils::Result<()> {
     let nvolumes = args.len();
     assert!(nvolumes >= 1);
     assert!(nvolumes <= libhammer2::fs::HAMMER2_MAX_VOLUMES.into());
@@ -580,7 +583,7 @@ pub(crate) fn mkfs(args: &[&str], opt: &mut Hammer2MkfsOptions) -> std::io::Resu
     // 1GB alignment (level1 freemap size) for volumes except for the last.
     // For the last volume, typically 8MB alignment to avoid edge cases for
     // reserved blocks and so raid stripes (if any) operate efficiently.
-    let mut fso = libhammer2::ondisk::Hammer2Ondisk::new(Some(opt.hammer2_version));
+    let mut fso = libhammer2::ondisk::Ondisk::new(Some(opt.hammer2_version));
 
     let mut resid = 0;
     let n = opt.fs_size.len();
@@ -589,7 +592,7 @@ pub(crate) fn mkfs(args: &[&str], opt: &mut Hammer2MkfsOptions) -> std::io::Resu
         assert!(resid >= libhammer2::fs::HAMMER2_FREEMAP_LEVEL1_SIZE);
     } else if n > 1 && nvolumes != n {
         log::error!("Invalid filesystem size count {} vs {}", n, nvolumes);
-        return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
+        return Err(Box::new(nix::errno::Errno::EINVAL));
     }
 
     for (i, f) in args.iter().enumerate().take(nvolumes) {
@@ -599,7 +602,7 @@ pub(crate) fn mkfs(args: &[&str], opt: &mut Hammer2MkfsOptions) -> std::io::Resu
             std::cmp::Ordering::Equal => {
                 if resid == 0 {
                     log::error!("No remaining filesystem size for {f}");
-                    return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
+                    return Err(Box::new(nix::errno::Errno::EINVAL));
                 }
                 if size > resid {
                     size = resid;
@@ -622,9 +625,9 @@ pub(crate) fn mkfs(args: &[&str], opt: &mut Hammer2MkfsOptions) -> std::io::Resu
         }
         if size == 0 {
             log::error!("{f} has aligned size of 0");
-            return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
+            return Err(Box::new(nix::errno::Errno::EINVAL));
         }
-        fso.install_volume(i.try_into().unwrap(), f, false, fso.get_total_size(), size)?;
+        fso.install_volume(i.try_into()?, f, false, fso.get_total_size(), size)?;
     }
 
     // Verify volumes constructed above.
@@ -660,7 +663,7 @@ pub(crate) fn mkfs(args: &[&str], opt: &mut Hammer2MkfsOptions) -> std::io::Resu
     let x = reserved_size + opt.boot_area_size + opt.aux_area_size;
     if fso.get_total_size() < x {
         log::error!("Not enough free space");
-        return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
+        return Err(Box::new(nix::errno::Errno::EINVAL));
     }
     let free_size = fso.get_total_size() - x;
 

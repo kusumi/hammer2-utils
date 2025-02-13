@@ -1,8 +1,6 @@
-use crate::Hammer2Options;
-
 use std::os::fd::AsRawFd;
 
-fn hexdump_inode(meta: &libhammer2::fs::Hammer2InodeMeta, opt: &Hammer2Options) {
+fn hexdump_inode(meta: &libhammer2::fs::Hammer2InodeMeta, opt: &crate::Opt) {
     if !opt.verbose {
         return;
     }
@@ -18,16 +16,10 @@ fn hexdump_inode(meta: &libhammer2::fs::Hammer2InodeMeta, opt: &Hammer2Options) 
     println!();
 }
 
-pub(crate) fn run(f: &str, opt: &Hammer2Options) -> Result<(), Box<dyn std::error::Error>> {
-    let mut ino = libhammer2::ioctl::Hammer2IocInode::new();
-    let fp = libhammer2::subs::get_ioctl_handle(f)?;
-    nix::ioctl_readwrite!(
-        inode_get,
-        libhammer2::ioctl::HAMMER2IOC,
-        libhammer2::ioctl::HAMMER2IOC_INODE_GET,
-        libhammer2::ioctl::Hammer2IocInode
-    );
-    unsafe { inode_get(fp.as_raw_fd(), &mut ino) }?;
+pub(crate) fn run(f: &str, opt: &crate::Opt) -> hammer2_utils::Result<()> {
+    let mut ino = libhammer2::ioctl::IocInode::new();
+    let fp = super::get_ioctl_handle(f)?;
+    unsafe { libhammer2::ioctl::inode_get(fp.as_raw_fd(), &mut ino) }?;
     let meta = &ino.ip_data.meta;
     hexdump_inode(meta, opt);
     println!("version = {}", meta.version);

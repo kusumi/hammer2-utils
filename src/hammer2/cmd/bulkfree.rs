@@ -1,5 +1,3 @@
-use crate::Hammer2Options;
-
 use std::os::fd::AsRawFd;
 
 fn get_usermem() -> u64 {
@@ -21,9 +19,9 @@ fn get_usermem() -> u64 {
     }
 }
 
-pub(crate) fn run(f: &str, opt: &Hammer2Options) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn run(f: &str, opt: &crate::Opt) -> hammer2_utils::Result<()> {
     const UNIT: u64 = 8 * libhammer2::subs::M_U64;
-    let mut bfi = libhammer2::ioctl::Hammer2IocBulkfree::new();
+    let mut bfi = libhammer2::ioctl::IocBulkfree::new();
     bfi.size = get_usermem() / 16;
     if bfi.size < UNIT {
         bfi.size = UNIT;
@@ -31,14 +29,8 @@ pub(crate) fn run(f: &str, opt: &Hammer2Options) -> Result<(), Box<dyn std::erro
     if opt.mem != 0 {
         bfi.size = (u64::try_from(opt.mem)? + UNIT - 1) & !(UNIT - 1);
     }
-    let fp = libhammer2::subs::get_ioctl_handle(f)?;
-    nix::ioctl_readwrite!(
-        bulkfree_scan,
-        libhammer2::ioctl::HAMMER2IOC,
-        libhammer2::ioctl::HAMMER2IOC_BULKFREE_SCAN,
-        libhammer2::ioctl::Hammer2IocBulkfree
-    );
-    unsafe { bulkfree_scan(fp.as_raw_fd(), &mut bfi) }?;
+    let fp = super::get_ioctl_handle(f)?;
+    unsafe { libhammer2::ioctl::bulkfree_scan(fp.as_raw_fd(), &mut bfi) }?;
     Ok(())
 }
 

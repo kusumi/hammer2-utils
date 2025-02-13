@@ -1,6 +1,6 @@
 use std::os::fd::AsRawFd;
 
-pub(crate) fn run(args: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn run(args: &[&str]) -> hammer2_utils::Result<()> {
     let mut w = 0;
     for f in args {
         if w < f.len() {
@@ -15,15 +15,9 @@ pub(crate) fn run(args: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
         "PATH"
     );
     for f in args {
-        let mut ino = libhammer2::ioctl::Hammer2IocInode::new();
-        let fp = libhammer2::subs::get_ioctl_handle(f)?;
-        nix::ioctl_readwrite!(
-            inode_get,
-            libhammer2::ioctl::HAMMER2IOC,
-            libhammer2::ioctl::HAMMER2IOC_INODE_GET,
-            libhammer2::ioctl::Hammer2IocInode
-        );
-        unsafe { inode_get(fp.as_raw_fd(), &mut ino) }?;
+        let mut ino = libhammer2::ioctl::IocInode::new();
+        let fp = super::get_ioctl_handle(f)?;
+        unsafe { libhammer2::ioctl::inode_get(fp.as_raw_fd(), &mut ino) }?;
         print!("{f:<w$} ");
         print!("{:>3} ", ino.ip_data.meta.ncopies);
         print!("{:>9} ", libhammer2::subs::get_size_string(ino.data_count));

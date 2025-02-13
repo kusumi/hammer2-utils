@@ -1,6 +1,3 @@
-use crate::Hammer2FsckOptions;
-use hammer2_utils::tab;
-
 use std::io::Write;
 
 const TAB_INDENT: usize = 8;
@@ -135,17 +132,20 @@ fn print_zone_summary(
     i: usize,
     zone: usize,
     bref: &libhammer2::fs::Hammer2Blockref,
-    opt: &Hammer2FsckOptions,
+    opt: &crate::Opt,
 ) {
     let s = if !opt.scan_best && i == zone {
         " (best)"
     } else {
         ""
     };
-    tab::println!(tab, "zone.{i} {:016x}{}", bref.data_off, s);
+    hammer2_utils::tab::println!(tab, "zone.{i} {:016x}{}", bref.data_off, s);
 }
 
-fn alloc_root_blockref(i: usize, typ: u8) -> libhammer2::fs::Hammer2Blockref {
+fn alloc_root_blockref(
+    i: usize,
+    typ: u8,
+) -> hammer2_utils::Result<libhammer2::fs::Hammer2Blockref> {
     assert!(
         typ == libhammer2::fs::HAMMER2_BREF_TYPE_EMPTY
             || typ == libhammer2::fs::HAMMER2_BREF_TYPE_FREEMAP
@@ -153,26 +153,24 @@ fn alloc_root_blockref(i: usize, typ: u8) -> libhammer2::fs::Hammer2Blockref {
     );
     let mut bref = libhammer2::fs::Hammer2Blockref::new(typ);
     bref.data_off = libhammer2::volume::get_volume_data_offset(i)
-        | u64::try_from(libhammer2::fs::HAMMER2_PBUFRADIX).unwrap();
-    bref
+        | u64::try_from(libhammer2::fs::HAMMER2_PBUFRADIX)?;
+    Ok(bref)
 }
 
 fn test_volume_header(
-    fso: &mut libhammer2::ondisk::Hammer2Ondisk,
+    fso: &mut libhammer2::ondisk::Ondisk,
     zone: usize,
-    opt: &Hammer2FsckOptions,
-) -> std::io::Result<()> {
+    opt: &crate::Opt,
+) -> hammer2_utils::Result<()> {
     let mut failure = None;
     for i in 0..libhammer2::fs::HAMMER2_NUM_VOLHDRS {
         if opt.scan_best && i != zone {
             continue;
         }
-        let vol = fso
-            .get_root_volume_mut()
-            .ok_or_else(libhammer2::util::notfound)?;
+        let vol = fso.get_root_volume_mut().ok_or(nix::errno::Errno::ENOENT)?;
         let offset = libhammer2::volume::get_volume_data_offset(i);
         if offset < vol.get_size() {
-            let broot = alloc_root_blockref(i, libhammer2::fs::HAMMER2_BREF_TYPE_EMPTY);
+            let broot = alloc_root_blockref(i, libhammer2::fs::HAMMER2_BREF_TYPE_EMPTY)?;
             print_zone_summary(0, i, zone, &broot, opt);
             let buf = vol.preadx(libhammer2::fs::HAMMER2_VOLUME_BYTES, offset)?;
             if let Err(e) = verify_volume_header(libhammer2::util::align_to(&buf)) {
@@ -181,35 +179,33 @@ fn test_volume_header(
                 }
             }
         } else {
-            tab::println!(0, "zone.{i} exceeds volume size");
+            hammer2_utils::tab::println!(0, "zone.{i} exceeds volume size");
             break;
         }
     }
     if let Some(e) = failure {
-        Err(e)
+        Err(Box::new(e))
     } else {
         Ok(())
     }
 }
 
 fn test_blockref(
-    fso: &mut libhammer2::ondisk::Hammer2Ondisk,
+    fso: &mut libhammer2::ondisk::Ondisk,
     typ: u8,
     zone: usize,
-    opt: &Hammer2FsckOptions,
-) -> std::io::Result<()> {
+    opt: &crate::Opt,
+) -> hammer2_utils::Result<()> {
     let mut failure = None;
     let mut droot = BlockrefMap::new();
     for i in 0..libhammer2::fs::HAMMER2_NUM_VOLHDRS {
         if opt.scan_best && i != zone {
             continue;
         }
-        let vol = fso
-            .get_root_volume_mut()
-            .ok_or_else(libhammer2::util::notfound)?;
+        let vol = fso.get_root_volume_mut().ok_or(nix::errno::Errno::ENOENT)?;
         let offset = libhammer2::volume::get_volume_data_offset(i);
         if offset < vol.get_size() {
-            let broot = alloc_root_blockref(i, typ);
+            let broot = alloc_root_blockref(i, typ)?;
             print_zone_summary(0, i, zone, &broot, opt);
             let mut bstats = BlockrefStats::new(typ);
             if let Err(e) = verify_blockref(fso, &broot, false, &mut bstats, &mut droot, opt) {
@@ -220,7 +216,7 @@ fn test_blockref(
             print_blockref_stats(&bstats, true, opt)?;
             print_blockref_entry(fso, &bstats.root, opt)?;
         } else {
-            tab::println!(0, "zone.{i} exceeds volume size");
+            hammer2_utils::tab::println!(0, "zone.{i} exceeds volume size");
             break;
         }
     }
@@ -232,28 +228,26 @@ fn test_blockref(
 }
 
 fn test_pfs_blockref(
-    fso: &mut libhammer2::ondisk::Hammer2Ondisk,
+    fso: &mut libhammer2::ondisk::Ondisk,
     zone: usize,
-    opt: &Hammer2FsckOptions,
-) -> std::io::Result<()> {
+    opt: &crate::Opt,
+) -> hammer2_utils::Result<()> {
     let mut failure = None;
     let mut droot = BlockrefMap::new();
     for i in 0..libhammer2::fs::HAMMER2_NUM_VOLHDRS {
         if opt.scan_best && i != zone {
             continue;
         }
-        let vol = fso
-            .get_root_volume_mut()
-            .ok_or_else(libhammer2::util::notfound)?;
+        let vol = fso.get_root_volume_mut().ok_or(nix::errno::Errno::ENOENT)?;
         let offset = libhammer2::volume::get_volume_data_offset(i);
         if offset < vol.get_size() {
             let typ = libhammer2::fs::HAMMER2_BREF_TYPE_VOLUME;
-            let broot = alloc_root_blockref(i, typ);
+            let broot = alloc_root_blockref(i, typ)?;
             print_zone_summary(0, i, zone, &broot, opt);
             let blist = match scan_pfs_blockref(fso, &broot) {
                 Ok(v) => v,
                 Err(e) => {
-                    tab::eprintln!(1, "Failed to read PFS blockref: {e}");
+                    hammer2_utils::tab::error!(1, "Failed to read PFS blockref: {e}");
                     if failure.is_none() {
                         failure = Some(e);
                     }
@@ -261,9 +255,9 @@ fn test_pfs_blockref(
                 }
             };
             if blist.is_empty() {
-                tab::eprintln!(1, "Failed to find PFS blockref");
+                hammer2_utils::tab::error!(1, "Failed to find PFS blockref");
                 if failure.is_none() {
-                    failure = Some(std::io::Error::from(std::io::ErrorKind::InvalidInput));
+                    failure = Some(Box::new(nix::errno::Errno::EINVAL));
                 }
                 continue;
             }
@@ -271,7 +265,7 @@ fn test_pfs_blockref(
             for m in &blist {
                 let mut found = false;
                 let ipdata = m.msg_as::<libhammer2::fs::Hammer2InodeData>();
-                let f = ipdata.get_filename_string();
+                let f = ipdata.get_filename_string()?;
                 if !opt.pfs_names.is_empty() {
                     for s in &opt.pfs_names {
                         if *s == f {
@@ -286,10 +280,10 @@ fn test_pfs_blockref(
                 }
                 count += 1;
                 if opt.print_pfs {
-                    print_pfs(ipdata);
+                    print_pfs(ipdata)?;
                     continue;
                 }
-                tab::println!(1, "{f}");
+                hammer2_utils::tab::println!(1, "{f}");
                 let mut bstats = BlockrefStats::new(typ);
                 if let Err(e) = verify_blockref(fso, &m.bref, false, &mut bstats, &mut droot, opt) {
                     if failure.is_none() {
@@ -300,13 +294,13 @@ fn test_pfs_blockref(
                 print_blockref_entry(fso, &bstats.root, opt)?;
             }
             if !opt.pfs_names.is_empty() && count == 0 {
-                tab::println!(1, "PFS not found");
+                hammer2_utils::tab::println!(1, "PFS not found");
                 if failure.is_none() {
-                    failure = Some(std::io::Error::from(std::io::ErrorKind::InvalidInput));
+                    failure = Some(Box::new(nix::errno::Errno::EINVAL));
                 }
             }
         } else {
-            tab::println!(0, "zone.{i} exceeds volume size");
+            hammer2_utils::tab::println!(0, "zone.{i} exceeds volume size");
             break;
         }
     }
@@ -345,7 +339,7 @@ fn add_blockref_entry_impl(
 }
 
 fn format_blockref(tab: usize, bref: &libhammer2::fs::Hammer2Blockref, msg: &str) -> String {
-    tab::format!(
+    hammer2_utils::tab::format!(
         tab,
         "{:016x} {:<12} {:016x}/{:<2}{}{}",
         bref.data_off,
@@ -357,41 +351,33 @@ fn format_blockref(tab: usize, bref: &libhammer2::fs::Hammer2Blockref, msg: &str
     )
 }
 
-fn print_blockref_debug(
-    bref: &libhammer2::fs::Hammer2Blockref,
-    msg: &str,
-    opt: &Hammer2FsckOptions,
-) {
+fn print_blockref_debug(bref: &libhammer2::fs::Hammer2Blockref, msg: &str, opt: &crate::Opt) {
     if opt.debug {
         println!("{}", format_blockref(1, bref, msg));
     }
 }
 
 fn print_blockref_entry(
-    fso: &mut libhammer2::ondisk::Hammer2Ondisk,
+    fso: &mut libhammer2::ondisk::Ondisk,
     root: &BlockrefMap,
-    opt: &Hammer2FsckOptions,
-) -> std::io::Result<()> {
+    opt: &crate::Opt,
+) -> hammer2_utils::Result<()> {
     for e in root.values() {
         for m in e {
             eprintln!(
                 "{}",
-                format_blockref(
-                    1,
-                    &m.bref,
-                    &libhammer2::util::bin_to_string(&m.msg).unwrap()
-                )
+                format_blockref(1, &m.bref, &libhammer2::util::bin_to_string(&m.msg)?)
             );
             if opt.verbose {
                 match fso.read_media(&m.bref) {
                     Ok(v) => {
-                        for s in &format_media(2, &m.bref, &v) {
+                        for s in &format_media(2, &m.bref, &v)? {
                             eprint!("{s}");
                         }
                         std::io::stderr().flush()?;
                     }
                     Err(e) => {
-                        tab::eprintln!(2, "Failed to read media: {e}");
+                        hammer2_utils::tab::error!(2, "Failed to read media: {e}");
                     }
                 }
             }
@@ -403,7 +389,7 @@ fn print_blockref_entry(
 fn print_blockref_stats(
     bstats: &BlockrefStats,
     newline: bool,
-    opt: &Hammer2FsckOptions,
+    opt: &crate::Opt,
 ) -> std::io::Result<()> {
     let emptybuf = if opt.count_empty {
         format!(", {} empty", bstats.total_empty)
@@ -411,7 +397,7 @@ fn print_blockref_stats(
         String::new()
     };
     let buf = match bstats.typ {
-        libhammer2::fs::HAMMER2_BREF_TYPE_FREEMAP => tab::format!(
+        libhammer2::fs::HAMMER2_BREF_TYPE_FREEMAP => hammer2_utils::tab::format!(
             1,
             "{} blockref ({} node, {} leaf{}), {}",
             bstats.total_blockref,
@@ -420,7 +406,7 @@ fn print_blockref_stats(
             emptybuf,
             libhammer2::subs::get_size_string(bstats.total_bytes)
         ),
-        libhammer2::fs::HAMMER2_BREF_TYPE_VOLUME => tab::format!(
+        libhammer2::fs::HAMMER2_BREF_TYPE_VOLUME => hammer2_utils::tab::format!(
             1,
             "{} blockref ({} inode, {} indirect, {} data, {} dirent{}), {}",
             bstats.total_blockref,
@@ -447,15 +433,15 @@ fn print_blockref_stats(
     Ok(())
 }
 
-fn verify_volume_header(voldata: &libhammer2::fs::Hammer2VolumeData) -> std::io::Result<()> {
+fn verify_volume_header(voldata: &libhammer2::fs::Hammer2VolumeData) -> nix::Result<()> {
     if voldata.magic != libhammer2::fs::HAMMER2_VOLUME_ID_HBO
         && voldata.magic != libhammer2::fs::HAMMER2_VOLUME_ID_ABO
     {
-        tab::eprintln!(1, "Bad magic {:x}", voldata.magic);
-        return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
+        hammer2_utils::tab::error!(1, "Bad magic {:x}", voldata.magic);
+        return Err(nix::errno::Errno::EINVAL);
     }
     if voldata.magic == libhammer2::fs::HAMMER2_VOLUME_ID_ABO {
-        tab::eprintln!(1, "Reverse endian");
+        hammer2_utils::tab::warning!(1, "Reverse endian");
     }
 
     let a = voldata.get_crc(
@@ -464,8 +450,8 @@ fn verify_volume_header(voldata: &libhammer2::fs::Hammer2VolumeData) -> std::io:
     );
     let b = voldata.icrc_sects[libhammer2::fs::HAMMER2_VOL_ICRC_SECT0];
     if a != b {
-        tab::eprintln!(1, "Bad HAMMER2_VOL_ICRC_SECT0 CRC");
-        return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
+        hammer2_utils::tab::error!(1, "Bad HAMMER2_VOL_ICRC_SECT0 CRC");
+        return Err(nix::errno::Errno::EINVAL);
     }
 
     let a = voldata.get_crc(
@@ -474,8 +460,8 @@ fn verify_volume_header(voldata: &libhammer2::fs::Hammer2VolumeData) -> std::io:
     );
     let b = voldata.icrc_sects[libhammer2::fs::HAMMER2_VOL_ICRC_SECT1];
     if a != b {
-        tab::eprintln!(1, "Bad HAMMER2_VOL_ICRC_SECT1 CRC");
-        return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
+        hammer2_utils::tab::error!(1, "Bad HAMMER2_VOL_ICRC_SECT1 CRC");
+        return Err(nix::errno::Errno::EINVAL);
     }
 
     let a = voldata.get_crc(
@@ -484,21 +470,21 @@ fn verify_volume_header(voldata: &libhammer2::fs::Hammer2VolumeData) -> std::io:
     );
     let b = voldata.icrc_volheader;
     if a != b {
-        tab::eprintln!(1, "Bad volume header CRC");
-        return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
+        hammer2_utils::tab::error!(1, "Bad volume header CRC");
+        return Err(nix::errno::Errno::EINVAL);
     }
     Ok(())
 }
 
 #[allow(clippy::too_many_lines)]
 fn verify_blockref(
-    fso: &mut libhammer2::ondisk::Hammer2Ondisk,
+    fso: &mut libhammer2::ondisk::Ondisk,
     bref: &libhammer2::fs::Hammer2Blockref,
     norecurse: bool,
     bstats: &mut BlockrefStats,
     droot: &mut BlockrefMap,
-    opt: &Hammer2FsckOptions,
-) -> std::io::Result<DeltaStats> {
+    opt: &crate::Opt,
+) -> hammer2_utils::Result<DeltaStats> {
     let mut dstats = DeltaStats::new();
     if bref.data_off != 0 {
         if let Some(v) = droot.get(&bref.data_off) {
@@ -567,16 +553,19 @@ fn verify_blockref(
     let media = match fso.read_media(bref) {
         Ok(v) => v,
         Err(e) => {
-            let msg = match e.kind() {
-                std::io::ErrorKind::InvalidInput => "Bad I/O bytes",
-                _ => "Failed to read media",
+            let msg = match e {
+                libhammer2::Error::Errno(ref e) => match e {
+                    nix::errno::Errno::EINVAL => "Bad I/O bytes",
+                    _ => "Failed to read media",
+                },
+                libhammer2::Error::Error(_) => "Failed to read media",
             };
             add_blockref_entry_from_str(&mut bstats.root, bref, msg);
             print_blockref_debug(bref, msg, opt);
-            return Err(e);
+            return Err(Box::new(e));
         }
     };
-    let bytes = u64::try_from(media.len()).unwrap();
+    let bytes = u64::try_from(media.len())?;
     if bref.typ != libhammer2::fs::HAMMER2_BREF_TYPE_VOLUME
         && bref.typ != libhammer2::fs::HAMMER2_BREF_TYPE_FREEMAP
     {
@@ -651,7 +640,7 @@ fn verify_blockref(
         let bscan = match bref.typ {
             libhammer2::fs::HAMMER2_BREF_TYPE_INODE => {
                 let ipdata = libhammer2::util::align_to::<libhammer2::fs::Hammer2InodeData>(&media);
-                if ipdata.meta.op_flags & libhammer2::fs::HAMMER2_OPFLAG_DIRECTDATA == 0 {
+                if (ipdata.meta.op_flags & libhammer2::fs::HAMMER2_OPFLAG_DIRECTDATA) == 0 {
                     ipdata
                         .u_as::<libhammer2::fs::Hammer2Blockset>()
                         .as_blockref()
@@ -690,7 +679,7 @@ fn verify_blockref(
     }
 
     if failed {
-        return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
+        return Err(Box::new(nix::errno::Errno::EINVAL));
     }
     dstats.count += 1;
     if bref.data_off != 0
@@ -704,7 +693,7 @@ fn verify_blockref(
     Ok(dstats)
 }
 
-fn print_pfs(ipdata: &libhammer2::fs::Hammer2InodeData) {
+fn print_pfs(ipdata: &libhammer2::fs::Hammer2InodeData) -> hammer2_utils::Result<()> {
     let meta = &ipdata.meta;
     let type_str = if meta.pfs_type == libhammer2::fs::HAMMER2_PFSTYPE_MASTER {
         if meta.pfs_subtype == libhammer2::fs::HAMMER2_PFSSUBTYPE_NONE {
@@ -715,18 +704,19 @@ fn print_pfs(ipdata: &libhammer2::fs::Hammer2InodeData) {
     } else {
         libhammer2::subs::get_pfs_subtype_string(meta.pfs_type)
     };
-    tab::println!(
+    hammer2_utils::tab::println!(
         1,
         "{type_str:<11} {} {}",
         libhammer2::subs::get_uuid_string_from_bytes(&meta.pfs_clid),
-        ipdata.get_filename_string()
+        ipdata.get_filename_string()?
     );
+    Ok(())
 }
 
 fn scan_pfs_blockref(
-    fso: &mut libhammer2::ondisk::Hammer2Ondisk,
+    fso: &mut libhammer2::ondisk::Ondisk,
     bref: &libhammer2::fs::Hammer2Blockref,
-) -> std::io::Result<BlockrefEntry> {
+) -> hammer2_utils::Result<BlockrefEntry> {
     let media = fso.read_media(bref)?;
     if media.is_empty() {
         return Ok(vec![]);
@@ -741,7 +731,7 @@ fn scan_pfs_blockref(
                     .as_blockref()
                     .to_vec()
             } else {
-                if ipdata.meta.op_flags & libhammer2::fs::HAMMER2_OPFLAG_PFSROOT != 0 {
+                if (ipdata.meta.op_flags & libhammer2::fs::HAMMER2_OPFLAG_PFSROOT) != 0 {
                     v.push(BlockrefMessage::new_from(bref, ipdata));
                 } else {
                     panic!("{}", ipdata.meta.inum); // should only see SUPROOT or PFS
@@ -766,73 +756,97 @@ fn scan_pfs_blockref(
 }
 
 #[allow(clippy::too_many_lines)]
-fn format_media(tab: usize, bref: &libhammer2::fs::Hammer2Blockref, media: &[u8]) -> Vec<String> {
+fn format_media(
+    tab: usize,
+    bref: &libhammer2::fs::Hammer2Blockref,
+    media: &[u8],
+) -> hammer2_utils::Result<Vec<String>> {
     let mut v = vec![];
     match bref.typ {
         libhammer2::fs::HAMMER2_BREF_TYPE_INODE => {
             let ipdata = libhammer2::util::align_to::<libhammer2::fs::Hammer2InodeData>(media);
             let meta = &ipdata.meta;
-            v.push(tab::format!(
+            v.push(hammer2_utils::tab::format!(
                 tab,
                 "filename \"{}\"\n",
-                ipdata.get_filename_string()
+                ipdata.get_filename_string()?
             ));
-            v.push(tab::format!(tab, "version {}\n", meta.version));
+            v.push(hammer2_utils::tab::format!(
+                tab,
+                "version {}\n",
+                meta.version
+            ));
             let ispfs = (meta.op_flags & libhammer2::fs::HAMMER2_OPFLAG_PFSROOT) != 0
                 || meta.pfs_type == libhammer2::fs::HAMMER2_PFSTYPE_SUPROOT;
             if ispfs {
-                v.push(tab::format!(
+                v.push(hammer2_utils::tab::format!(
                     tab,
                     "pfs_subtype {} ({})\n",
                     meta.pfs_subtype,
                     libhammer2::subs::get_pfs_subtype_string(meta.pfs_subtype)
                 ));
             }
-            v.push(tab::format!(tab, "uflags {:#010x}\n", meta.uflags));
+            v.push(hammer2_utils::tab::format!(
+                tab,
+                "uflags {:#010x}\n",
+                meta.uflags
+            ));
             if meta.rmajor != 0 || meta.rminor != 0 {
-                v.push(tab::format!(tab, "rmajor {}\n", meta.rmajor));
-                v.push(tab::format!(tab, "rminor {}\n", meta.rminor));
+                v.push(hammer2_utils::tab::format!(tab, "rmajor {}\n", meta.rmajor));
+                v.push(hammer2_utils::tab::format!(tab, "rminor {}\n", meta.rminor));
             }
-            v.push(tab::format!(
+            v.push(hammer2_utils::tab::format!(
                 tab,
                 "ctime {}\n",
                 libhammer2::subs::get_local_time_string(meta.ctime)
             ));
-            v.push(tab::format!(
+            v.push(hammer2_utils::tab::format!(
                 tab,
                 "mtime {}\n",
                 libhammer2::subs::get_local_time_string(meta.mtime)
             ));
-            v.push(tab::format!(
+            v.push(hammer2_utils::tab::format!(
                 tab,
                 "atime {}\n",
                 libhammer2::subs::get_local_time_string(meta.atime)
             ));
-            v.push(tab::format!(
+            v.push(hammer2_utils::tab::format!(
                 tab,
                 "btime {}\n",
                 libhammer2::subs::get_local_time_string(meta.btime)
             ));
-            v.push(tab::format!(
+            v.push(hammer2_utils::tab::format!(
                 tab,
                 "uid {}\n",
                 libhammer2::subs::get_uuid_string_from_bytes(&meta.uid)
             ));
-            v.push(tab::format!(
+            v.push(hammer2_utils::tab::format!(
                 tab,
                 "gid {}\n",
                 libhammer2::subs::get_uuid_string_from_bytes(&meta.gid)
             ));
-            v.push(tab::format!(
+            v.push(hammer2_utils::tab::format!(
                 tab,
                 "type {}\n",
                 libhammer2::subs::get_inode_type_string(meta.typ)
             ));
-            v.push(tab::format!(tab, "op_flags {:#04x}\n", meta.op_flags));
-            v.push(tab::format!(tab, "cap_flags {:#06x}\n", meta.cap_flags));
-            v.push(tab::format!(tab, "mode {:<7o}\n", meta.mode));
-            v.push(tab::format!(tab, "inum {:#018x}\n", meta.inum));
-            v.push(tab::format!(tab, "size {} ", meta.size));
+            v.push(hammer2_utils::tab::format!(
+                tab,
+                "op_flags {:#04x}\n",
+                meta.op_flags
+            ));
+            v.push(hammer2_utils::tab::format!(
+                tab,
+                "cap_flags {:#06x}\n",
+                meta.cap_flags
+            ));
+            v.push(hammer2_utils::tab::format!(tab, "mode {:<7o}\n", meta.mode));
+            v.push(hammer2_utils::tab::format!(
+                tab,
+                "inum {:#018x}\n",
+                meta.inum
+            ));
+            v.push(hammer2_utils::tab::format!(tab, "size {} ", meta.size));
             if (meta.op_flags & libhammer2::fs::HAMMER2_OPFLAG_DIRECTDATA) != 0
                 && meta.size <= libhammer2::fs::HAMMER2_EMBEDDED_BYTES
             {
@@ -840,55 +854,87 @@ fn format_media(tab: usize, bref: &libhammer2::fs::Hammer2Blockref, media: &[u8]
             } else {
                 v.push("\n".to_string());
             }
-            v.push(tab::format!(tab, "nlinks {}\n", meta.nlinks));
-            v.push(tab::format!(tab, "iparent {:#018x}\n", meta.iparent));
-            v.push(tab::format!(tab, "name_key {:#018x}\n", meta.name_key));
-            v.push(tab::format!(tab, "name_len {}\n", meta.name_len));
-            v.push(tab::format!(tab, "ncopies {}\n", meta.ncopies));
-            v.push(tab::format!(
+            v.push(hammer2_utils::tab::format!(tab, "nlinks {}\n", meta.nlinks));
+            v.push(hammer2_utils::tab::format!(
+                tab,
+                "iparent {:#018x}\n",
+                meta.iparent
+            ));
+            v.push(hammer2_utils::tab::format!(
+                tab,
+                "name_key {:#018x}\n",
+                meta.name_key
+            ));
+            v.push(hammer2_utils::tab::format!(
+                tab,
+                "name_len {}\n",
+                meta.name_len
+            ));
+            v.push(hammer2_utils::tab::format!(
+                tab,
+                "ncopies {}\n",
+                meta.ncopies
+            ));
+            v.push(hammer2_utils::tab::format!(
                 tab,
                 "comp_algo {}\n",
                 libhammer2::subs::get_comp_mode_string(meta.comp_algo)
             ));
-            v.push(tab::format!(
+            v.push(hammer2_utils::tab::format!(
                 tab,
                 "check_algo {}\n",
                 libhammer2::subs::get_check_mode_string(meta.check_algo)
             ));
             if ispfs {
-                v.push(tab::format!(tab, "pfs_nmasters {}\n", meta.pfs_nmasters));
-                v.push(tab::format!(
+                v.push(hammer2_utils::tab::format!(
+                    tab,
+                    "pfs_nmasters {}\n",
+                    meta.pfs_nmasters
+                ));
+                v.push(hammer2_utils::tab::format!(
                     tab,
                     "pfs_type {} ({})\n",
                     meta.pfs_type,
                     libhammer2::subs::get_pfs_type_string(meta.pfs_type)
                 ));
-                v.push(tab::format!(tab, "pfs_inum {:#018x}\n", meta.pfs_inum));
-                v.push(tab::format!(
+                v.push(hammer2_utils::tab::format!(
+                    tab,
+                    "pfs_inum {:#018x}\n",
+                    meta.pfs_inum
+                ));
+                v.push(hammer2_utils::tab::format!(
                     tab,
                     "pfs_clid {}\n",
                     libhammer2::subs::get_uuid_string_from_bytes(&meta.pfs_clid)
                 ));
-                v.push(tab::format!(
+                v.push(hammer2_utils::tab::format!(
                     tab,
                     "pfs_fsid {}\n",
                     libhammer2::subs::get_uuid_string_from_bytes(&meta.pfs_fsid)
                 ));
-                v.push(tab::format!(
+                v.push(hammer2_utils::tab::format!(
                     tab,
                     "pfs_lsnap_tid {:#018x}\n",
                     meta.pfs_lsnap_tid
                 ));
             }
-            v.push(tab::format!(tab, "data_quota {}\n", meta.data_quota));
-            v.push(tab::format!(
+            v.push(hammer2_utils::tab::format!(
+                tab,
+                "data_quota {}\n",
+                meta.data_quota
+            ));
+            v.push(hammer2_utils::tab::format!(
                 tab,
                 "data_count {}\n",
                 bref.embed_as::<libhammer2::fs::Hammer2BlockrefEmbedStats>()
                     .data_count
             ));
-            v.push(tab::format!(tab, "inode_quota {}\n", meta.inode_quota));
-            v.push(tab::format!(
+            v.push(hammer2_utils::tab::format!(
+                tab,
+                "inode_quota {}\n",
+                meta.inode_quota
+            ));
+            v.push(hammer2_utils::tab::format!(
                 tab,
                 "inode_count {}\n",
                 bref.embed_as::<libhammer2::fs::Hammer2BlockrefEmbedStats>()
@@ -901,7 +947,7 @@ fn format_media(tab: usize, bref: &libhammer2::fs::Hammer2Blockref, media: &[u8]
                 .iter()
                 .enumerate()
             {
-                v.push(tab::format!(
+                v.push(hammer2_utils::tab::format!(
                     tab,
                     "{i:<3} {:016x} {:<12} {:016x}/{:<2}\n",
                     bref.data_off,
@@ -914,19 +960,26 @@ fn format_media(tab: usize, bref: &libhammer2::fs::Hammer2Blockref, media: &[u8]
         libhammer2::fs::HAMMER2_BREF_TYPE_DIRENT => {
             let dirent = bref.embed_as::<libhammer2::fs::Hammer2DirentHead>();
             let namelen = usize::from(dirent.namlen);
-            v.push(tab::format!(
+            v.push(hammer2_utils::tab::format!(
                 tab,
                 "filename \"{}\"\n",
                 if namelen <= bref.check.len() {
                     std::str::from_utf8(&bref.check[..namelen])
                 } else {
                     std::str::from_utf8(&media[..namelen])
-                }
-                .unwrap()
+                }?
             ));
-            v.push(tab::format!(tab, "inum {:#018x}\n", dirent.inum));
-            v.push(tab::format!(tab, "namelen {}\n", dirent.namlen));
-            v.push(tab::format!(
+            v.push(hammer2_utils::tab::format!(
+                tab,
+                "inum {:#018x}\n",
+                dirent.inum
+            ));
+            v.push(hammer2_utils::tab::format!(
+                tab,
+                "namelen {}\n",
+                dirent.namlen
+            ));
+            v.push(hammer2_utils::tab::format!(
                 tab,
                 "type {}\n",
                 libhammer2::subs::get_inode_type_string(dirent.typ)
@@ -936,9 +989,9 @@ fn format_media(tab: usize, bref: &libhammer2::fs::Hammer2Blockref, media: &[u8]
             let bmdata = libhammer2::extra::media_as::<libhammer2::fs::Hammer2BmapData>(media);
             for i in 0..libhammer2::fs::HAMMER2_FREEMAP_COUNT {
                 let bmdata = &bmdata[i];
-                let data_off = bref.key
-                    + u64::try_from(i).unwrap() * libhammer2::fs::HAMMER2_FREEMAP_LEVEL0_SIZE;
-                v.push(tab::format!(
+                let data_off =
+                    bref.key + u64::try_from(i)? * libhammer2::fs::HAMMER2_FREEMAP_LEVEL0_SIZE;
+                v.push(hammer2_utils::tab::format!(
                     tab,
                     "{data_off:016x} {i:04}.{:04x} (avail={:07}) \
                     {:016x} {:016x} {:016x} {:016x} {:016x} {:016x} {:016x} {:016x}\n",
@@ -957,10 +1010,10 @@ fn format_media(tab: usize, bref: &libhammer2::fs::Hammer2Blockref, media: &[u8]
         }
         _ => (),
     }
-    v
+    Ok(v)
 }
 
-pub(crate) fn fsck(devpath: &str, opt: &Hammer2FsckOptions) -> std::io::Result<()> {
+pub(crate) fn fsck(devpath: &str, opt: &crate::Opt) -> hammer2_utils::Result<()> {
     let mut fso = libhammer2::ondisk::init(devpath, true)?;
     let best = fso.get_best_volume_data()?[libhammer2::fs::HAMMER2_ROOT_VOLUME as usize];
     let zone = best.0;
@@ -1023,7 +1076,13 @@ mod tests {
         let bref = libhammer2::fs::Hammer2Blockref::new_empty();
         for s in [String::new(), "A".to_string(), "A".repeat(1024)] {
             let m = super::BlockrefMessage::new_from_str(&bref, &s);
-            assert_eq!(libhammer2::util::bin_to_string(&m.msg).unwrap(), s);
+            assert_eq!(
+                match libhammer2::util::bin_to_string(&m.msg) {
+                    Ok(v) => v,
+                    Err(e) => panic!("{e}"),
+                },
+                s
+            );
         }
     }
 

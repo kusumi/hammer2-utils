@@ -1,9 +1,6 @@
-use crate::cmd;
-use crate::Hammer2Options;
-
-fn docleanup(f: &str, opt: &Hammer2Options) -> Result<(), Box<dyn std::error::Error>> {
+fn docleanup(f: &str, opt: &crate::Opt) -> hammer2_utils::Result<()> {
     println!("hammer2 cleanup \"{f}\"");
-    cmd::bulkfree::run(f, opt)
+    crate::cmd::bulkfree::run(f, opt)
 }
 
 fn sameh2prefix(f: &str, h2prefixes: &[String]) -> bool {
@@ -28,7 +25,7 @@ fn geth2prefix(f: &str) -> &str {
     }
 }
 
-pub(crate) fn run(f: Option<&str>, opt: &Hammer2Options) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn run(f: Option<&str>, opt: &crate::Opt) -> hammer2_utils::Result<()> {
     if let Some(f) = f {
         return docleanup(f, opt);
     }

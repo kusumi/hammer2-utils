@@ -1,8 +1,6 @@
-use crate::Hammer2Options;
-
 use std::os::fd::AsRawFd;
 
-pub(crate) fn run(args: &[&str], opt: &Hammer2Options) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn run(args: &[&str], opt: &crate::Opt) -> hammer2_utils::Result<()> {
     let (args, all) = if args.len() == 1 && args[0].is_empty() {
         (libhammer2::subs::get_hammer2_mounts()?, true)
     } else {
@@ -19,19 +17,13 @@ pub(crate) fn run(args: &[&str], opt: &Hammer2Options) -> Result<(), Box<dyn std
         if args.len() > 1 || all {
             println!("{f}");
         }
-        let volumes = [libhammer2::ioctl::Hammer2IocVolume::new();
-            libhammer2::fs::HAMMER2_MAX_VOLUMES as usize];
-        let mut vol = libhammer2::ioctl::Hammer2IocVolumeList::new();
+        let volumes =
+            [libhammer2::ioctl::IocVolume::new(); libhammer2::fs::HAMMER2_MAX_VOLUMES as usize];
+        let mut vol = libhammer2::ioctl::IocVolumeList::new();
         vol.volumes = volumes.as_ptr() as u64;
         vol.nvolumes = libhammer2::fs::HAMMER2_MAX_VOLUMES.into();
-        let fp = libhammer2::subs::get_ioctl_handle(f)?;
-        nix::ioctl_readwrite!(
-            volume_list,
-            libhammer2::ioctl::HAMMER2IOC,
-            libhammer2::ioctl::HAMMER2IOC_VOLUME_LIST,
-            libhammer2::ioctl::Hammer2IocVolumeList
-        );
-        unsafe { volume_list(fp.as_raw_fd(), &mut vol) }?;
+        let fp = super::get_ioctl_handle(f)?;
+        unsafe { libhammer2::ioctl::volume_list(fp.as_raw_fd(), &mut vol) }?;
         let nvolumes = vol.nvolumes.try_into()?;
         let mut w = 0;
         for entry in volumes.iter().take(nvolumes) {

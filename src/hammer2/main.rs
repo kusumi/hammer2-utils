@@ -2,10 +2,8 @@ mod cmd;
 mod env;
 mod show;
 
-use hammer2_utils::util;
-
 #[derive(Debug, Default)]
-pub(crate) struct Hammer2Options {
+pub(crate) struct Opt {
     pub(crate) verbose: bool,
     pub(crate) quiet: bool,
     pub(crate) recurse: bool,
@@ -14,7 +12,7 @@ pub(crate) struct Hammer2Options {
     pub(crate) mem: usize,
 }
 
-impl Hammer2Options {
+impl Opt {
     pub(crate) fn new() -> Self {
         Self {
             ..Default::default()
@@ -22,7 +20,7 @@ impl Hammer2Options {
     }
 }
 
-fn get_string_size(v: &str) -> Result<usize, Box<dyn std::error::Error>> {
+fn get_string_size(v: &str) -> hammer2_utils::Result<usize> {
     let s = &v[v.len() - 1..];
     let unit = match s {
         "k" | "K" => libhammer2::subs::K,
@@ -118,13 +116,16 @@ fn usage(prog: &str, gopt: &getopts::Options) {
 }
 
 fn main() {
-    if let Err(e) = util::init_std_logger() {
+    if let Err(e) = hammer2_utils::util::init_std_logger() {
         eprintln!("{e}");
         std::process::exit(1);
     }
 
     let args: Vec<String> = std::env::args().collect();
-    let prog = &util::get_basename(&args[0]);
+    let Some(prog) = &hammer2_utils::util::get_basename(&args[0]) else {
+        log::error!("{args:?}");
+        std::process::exit(1);
+    };
 
     let mut gopt = getopts::Options::new();
     gopt.optflag("v", "", "Enable verbose flag");
@@ -146,7 +147,7 @@ fn main() {
         }
     };
     if matches.opt_present("version") {
-        util::print_version();
+        hammer2_utils::util::print_version();
         std::process::exit(0);
     }
     if matches.opt_present("help") {
@@ -159,7 +160,7 @@ fn main() {
         std::process::exit(1);
     }
 
-    let mut opt = Hammer2Options::new();
+    let mut opt = Opt::new();
     if matches.opt_present("v") {
         if opt.quiet {
             opt.quiet = false;
@@ -223,12 +224,7 @@ fn main() {
 }
 
 #[allow(clippy::too_many_lines)]
-fn cmd_run(
-    cmd: &str,
-    args: &[&str],
-    sel_path: &str,
-    opt: &Hammer2Options,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_run(cmd: &str, args: &[&str], sel_path: &str, opt: &Opt) -> hammer2_utils::Result<()> {
     if cmd == "cleanup" {
         let f = if args.is_empty() { None } else { Some(args[0]) };
         cmd::cleanup::run(f, opt)
@@ -304,7 +300,7 @@ fn cmd_run(
         )
     } else if cmd == "snapshot" || cmd == "snapshot-debug" {
         let flags = if cmd == "snapshot-debug" {
-            libhammer2::ioctl::HAMMER2_PFSFLAGS_NOSYNC
+            libhammer2::ioctl::PFS_FLAGS_NOSYNC
         } else {
             0
         };

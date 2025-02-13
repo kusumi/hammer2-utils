@@ -1,5 +1,3 @@
-use crate::Hammer2Options;
-
 use libhammer2::os::StatExt;
 use std::io::Write;
 
@@ -186,12 +184,12 @@ macro_rules! get_entry_mut {
 // If filename is NULL, check for a valid filename, and copy it into buf.
 #[allow(dead_code)]
 fn check_filename(
-    fso: &mut libhammer2::ondisk::Hammer2Ondisk,
+    fso: &mut libhammer2::ondisk::Ondisk,
     bref: &libhammer2::fs::Hammer2Blockref,
     filename: Option<&str>,
     flen: usize,
     strict: bool,
-) -> Result<Option<String>, Box<dyn std::error::Error>> {
+) -> hammer2_utils::Result<Option<String>> {
     // filename too long
     if flen > 1024 {
         return Ok(None);
@@ -211,7 +209,7 @@ fn check_filename(
     } else {
         // Filename requires media access.
         // bref must represent a data reference to a 1KB block or smaller.
-        if bref.data_off & MAX_RADIX_MASK == 0 || bref.data_off & MAX_RADIX_MASK > 10 {
+        if (bref.data_off & MAX_RADIX_MASK) == 0 || (bref.data_off & MAX_RADIX_MASK) > 10 {
             return Ok(None);
         }
         // Indirect block containing filename must be large enough
@@ -349,7 +347,7 @@ fn topology_check_duplicate_indirect(
 // Note: Modified DragonFly's inefficient hv2.
 #[allow(clippy::too_many_arguments)]
 fn enter_inode(
-    fso: &mut libhammer2::ondisk::Hammer2Ondisk,
+    fso: &mut libhammer2::ondisk::Ondisk,
     ihash1: &mut InodeEntryHash,
     ihash2: &mut InodeEntryHash,
     nhash: &mut NegativeEntryHash,
@@ -357,7 +355,7 @@ fn enter_inode(
     sdc: &mut SdcCache,
     bref: &libhammer2::fs::Hammer2Blockref,
     strict: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> hammer2_utils::Result<()> {
     let hv1 = (bref.key ^ (bref.key >> 16)) & HTABLE_MASK;
     let hv2 = ((bref.key ^ (bref.key >> 16)) | (bref.data_off >> 10)) & HTABLE_MASK;
     // Ignore duplicate inodes, use the secondary inode hash table's
@@ -561,7 +559,7 @@ fn enter_negative(
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_lines)]
 fn dump_tree(
-    fso: &mut libhammer2::ondisk::Hammer2Ondisk,
+    fso: &mut libhammer2::ondisk::Ondisk,
     ihash1: &mut InodeEntryHash,
     thash: &mut TopologyEntryHash,
     tihash: &mut TopologyInodeEntryHash,
@@ -575,7 +573,7 @@ fn dump_tree(
     path_depth: usize,
     isafile: bool,
     strict: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> hammer2_utils::Result<()> {
     const REPINODEDEPTH: usize = 256;
     let iscan = get_entry!(ihash1, hid);
     // Re-read the already-validated inode instead of saving it in
@@ -740,7 +738,7 @@ fn dump_tree(
 // This function is part of the dump_tree() recursion mechanism.
 #[allow(clippy::too_many_arguments)]
 fn dump_dir_data(
-    fso: &mut libhammer2::ondisk::Hammer2Ondisk,
+    fso: &mut libhammer2::ondisk::Ondisk,
     ihash1: &mut InodeEntryHash,
     thash: &mut TopologyEntryHash,
     tihash: &mut TopologyInodeEntryHash,
@@ -754,7 +752,7 @@ fn dump_dir_data(
     path_depth: usize,
     isafile: bool,
     strict: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> hammer2_utils::Result<()> {
     // Scan the brefs associated with the directory.
     for bref in base {
         if bref.typ == libhammer2::fs::HAMMER2_BREF_TYPE_EMPTY {
@@ -875,13 +873,13 @@ fn dump_dir_data(
 //
 // If the data block recursion fails the file will be renamed .corrupted.
 fn dump_inum_file(
-    fso: &mut libhammer2::ondisk::Hammer2Ondisk,
+    fso: &mut libhammer2::ondisk::Ondisk,
     ihash1: &mut InodeEntryHash,
     hid: InodeEntryHashId,
     inode: &libhammer2::fs::Hammer2InodeData,
     path1: &str,
     strict: bool,
-) -> Result<bool, Box<dyn std::error::Error>> {
+) -> hammer2_utils::Result<bool> {
     let iscan = get_entry!(ihash1, hid);
     // If this specific inode has already been generated, try to
     // hardlink it instead of regenerating the same file again.
@@ -967,12 +965,12 @@ fn dump_inum_file(
 // Dumps the data records for an inode to the target file, returns
 // TRUE on success, FALSE if corruption was detected.
 fn dump_file_data(
-    fso: &mut libhammer2::ondisk::Hammer2Ondisk,
+    fso: &mut libhammer2::ondisk::Ondisk,
     fp: &mut std::fs::File,
     fsize: u64,
     base: &[&libhammer2::fs::Hammer2Blockref],
     strict: bool,
-) -> Result<bool, Box<dyn std::error::Error>> {
+) -> hammer2_utils::Result<bool> {
     let mut res = true;
     for bref in base {
         if bref.typ == libhammer2::fs::HAMMER2_BREF_TYPE_EMPTY || bref.data_off == 0 {
@@ -1086,9 +1084,9 @@ impl SdcCache {
 
     fn cache_read<'a>(
         &'a mut self,
-        fso: &mut libhammer2::ondisk::Hammer2Ondisk,
+        fso: &mut libhammer2::ondisk::Ondisk,
         data_off: u64,
-    ) -> Result<(&'a [u8], u64), Box<dyn std::error::Error>> {
+    ) -> hammer2_utils::Result<(&'a [u8], u64)> {
         // Translate logical offset to volume and physical offset.
         // Return NULL with *bytesp set to 0 to indicate pre-I/O
         // sanity check failure.
@@ -1143,7 +1141,7 @@ impl SdcCache {
 #[derive(Clone, Debug, Default)]
 struct SdcCacheEntry {
     buf: Vec<u8>,
-    volid: u8,
+    volid: usize,
     offset: u64,
     last: u64,
 }
@@ -1152,7 +1150,7 @@ impl SdcCacheEntry {
     fn new() -> Self {
         Self {
             buf: vec![0; libhammer2::fs::HAMMER2_PBUFSIZE as usize],
-            volid: libhammer2::fs::HAMMER2_MAX_VOLUMES,
+            volid: libhammer2::fs::HAMMER2_MAX_VOLUMES.into(),
             offset: 0,
             last: 0,
         }
@@ -1174,8 +1172,8 @@ pub(crate) fn run(
     destdir: &str,
     strict: bool,
     isafile: bool,
-    opt: &Hammer2Options,
-) -> Result<(), Box<dyn std::error::Error>> {
+    opt: &crate::Opt,
+) -> hammer2_utils::Result<()> {
     const INODES_PER_BLOCK: usize =
         (libhammer2::fs::HAMMER2_PBUFSIZE / libhammer2::fs::HAMMER2_INODE_BYTES) as usize;
     const DISPMODULO: u64 = HTABLE_SIZE / 32768;
@@ -1216,9 +1214,7 @@ pub(crate) fn run(
         let mut poff = loff - offset;
         let mut xdisp = 0;
         while poff < size {
-            let vol = fso
-                .get_volume_mut(loff)
-                .ok_or_else(libhammer2::util::enoent)?;
+            let vol = fso.get_volume_mut(loff).ok_or(nix::errno::Errno::ENOENT)?;
             let Ok(data) = vol.preadx(libhammer2::fs::HAMMER2_PBUFSIZE, poff) else {
                 // Try to skip possible I/O error.
                 poff += libhammer2::fs::HAMMER2_PBUFSIZE;
@@ -1283,7 +1279,7 @@ pub(crate) fn run(
             media_bytes += n;
             // Update progress
             if !opt.quiet {
-                let vol = fso.get_volume(loff).ok_or_else(libhammer2::util::enoent)?;
+                let vol = fso.get_volume(loff).ok_or(nix::errno::Errno::ENOENT)?;
                 xdisp += 1;
                 if xdisp == DISPMODULO || poff == vol.get_size() - n {
                     xdisp = 0;

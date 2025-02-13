@@ -1,16 +1,10 @@
 use std::os::fd::AsRawFd;
 
-pub(crate) fn run(args: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn run(args: &[&str]) -> hammer2_utils::Result<()> {
     for f in args {
-        let mut gfs = libhammer2::ioctl::Hammer2IocGrowfs::new();
-        let fp = libhammer2::subs::get_ioctl_handle(f)?;
-        nix::ioctl_readwrite!(
-            growfs,
-            libhammer2::ioctl::HAMMER2IOC,
-            libhammer2::ioctl::HAMMER2IOC_GROWFS,
-            libhammer2::ioctl::Hammer2IocGrowfs
-        );
-        unsafe { growfs(fp.as_raw_fd(), &mut gfs) }?;
+        let mut gfs = libhammer2::ioctl::IocGrowfs::new();
+        let fp = super::get_ioctl_handle(f)?;
+        unsafe { libhammer2::ioctl::growfs(fp.as_raw_fd(), &mut gfs) }?;
         if gfs.modified != 0 {
             println!("{f} grown to {:016x}", gfs.size);
         } else {

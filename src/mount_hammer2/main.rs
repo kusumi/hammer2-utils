@@ -1,15 +1,16 @@
 mod os;
 
-use hammer2_utils::util;
-
 fn main() {
-    if let Err(e) = util::init_std_logger() {
+    if let Err(e) = hammer2_utils::util::init_std_logger() {
         eprintln!("{e}");
         std::process::exit(1);
     }
 
     let args: Vec<String> = std::env::args().collect();
-    let prog = &util::get_basename(&args[0]);
+    let Some(prog) = &hammer2_utils::util::get_basename(&args[0]) else {
+        log::error!("{args:?}");
+        std::process::exit(1);
+    };
 
     let mut gopt = os::get_getopts();
     gopt.optflag("", "version", "Print version and exit");
@@ -24,7 +25,7 @@ fn main() {
         }
     };
     if matches.opt_present("version") {
-        util::print_version();
+        hammer2_utils::util::print_version();
         std::process::exit(0);
     }
     if matches.opt_present("help") {

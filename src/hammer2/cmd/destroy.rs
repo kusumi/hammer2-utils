@@ -17,22 +17,16 @@ fn split(f: &str) -> (&str, &str) {
     }
 }
 
-pub(crate) fn run(args: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn run(args: &[&str]) -> hammer2_utils::Result<()> {
     for &f in args {
-        let mut des = libhammer2::ioctl::Hammer2IocDestroy::new();
-        des.cmd = libhammer2::ioctl::HAMMER2_DELETE_FILE;
+        let mut des = libhammer2::ioctl::IocDestroy::new();
+        des.cmd = libhammer2::ioctl::DESTROY_CMD_FILE;
         let (dir, base) = split(f);
         des.copy_path(base.as_bytes());
         print!("{f}\t");
         std::io::stdout().flush()?;
-        let fp = libhammer2::subs::get_ioctl_handle(dir)?;
-        nix::ioctl_readwrite!(
-            destroy,
-            libhammer2::ioctl::HAMMER2IOC,
-            libhammer2::ioctl::HAMMER2IOC_DESTROY,
-            libhammer2::ioctl::Hammer2IocDestroy
-        );
-        match unsafe { destroy(fp.as_raw_fd(), &mut des) } {
+        let fp = super::get_ioctl_handle(dir)?;
+        match unsafe { libhammer2::ioctl::destroy(fp.as_raw_fd(), &mut des) } {
             Ok(_) => println!("ok"),
             Err(e) => {
                 println!("{e}");

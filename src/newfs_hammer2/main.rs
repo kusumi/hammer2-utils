@@ -1,7 +1,5 @@
 mod mkfs;
 
-use hammer2_utils::util;
-
 fn usage(prog: &str, gopt: &getopts::Options) {
     print!(
         "{}",
@@ -14,13 +12,16 @@ fn usage(prog: &str, gopt: &getopts::Options) {
 
 #[allow(clippy::too_many_lines)]
 fn main() {
-    if let Err(e) = util::init_std_logger() {
+    if let Err(e) = hammer2_utils::util::init_std_logger() {
         eprintln!("{e}");
         std::process::exit(1);
     }
 
     let args: Vec<String> = std::env::args().collect();
-    let prog = &util::get_basename(&args[0]);
+    let Some(prog) = &hammer2_utils::util::get_basename(&args[0]) else {
+        log::error!("{args:?}");
+        std::process::exit(1);
+    };
 
     let mut gopt = getopts::Options::new();
     gopt.optopt(
@@ -87,7 +88,7 @@ fn main() {
         }
     };
     if matches.opt_present("version") {
-        util::print_version();
+        hammer2_utils::util::print_version();
         std::process::exit(0);
     }
     if matches.opt_present("help") {
@@ -100,7 +101,7 @@ fn main() {
         std::process::exit(1);
     }
 
-    let mut opt = mkfs::Hammer2MkfsOptions::new();
+    let mut opt = mkfs::Opt::new();
     if let Some(v) = matches.opt_str("b") {
         opt.boot_area_size = match mkfs::get_size(
             &v,
@@ -169,7 +170,7 @@ fn main() {
         }
     } else {
         assert!(opt.default_label_type.is_none());
-        opt.default_label_type = Some(mkfs::Hammer2Label::Data);
+        opt.default_label_type = Some(mkfs::Label::Data);
     }
     if let Some(v) = matches.opt_str("s") {
         if let Err(e) = opt.parse_fs_size(&v) {

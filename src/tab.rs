@@ -1,43 +1,55 @@
 #[macro_export]
 macro_rules! format {
-    ($tab: expr, $($args: tt)*) => {
-        format!("{}{}", " ".repeat($tab * TAB_INDENT), format!($($args)*))
+    ($n: expr, $($args: tt)*) => {
+        format!("{}{}", " ".repeat($n * TAB_INDENT), format!($($args)*))
     }
 }
 pub use format;
 
 #[macro_export]
 macro_rules! print {
-    ($tab: expr, $($args: tt)*) => {
-        print!("{}", " ".repeat($tab * TAB_INDENT));
-        print!($($args)*);
+    ($n: expr, $($args: tt)*) => {
+        print!("{}{}", " ".repeat($n * TAB_INDENT), format!($($args)*));
     }
 }
 pub use print;
 
 #[macro_export]
 macro_rules! println {
-    ($tab: expr, $($args: tt)*) => {
-        print!("{}", " ".repeat($tab * TAB_INDENT));
-        println!($($args)*);
+    ($n: expr, $($args: tt)*) => {
+        println!("{}{}", " ".repeat($n * TAB_INDENT), format!($($args)*));
     }
 }
 pub use println;
 
 #[macro_export]
 macro_rules! eprint {
-    ($tab: expr, $($args: tt)*) => {
-        eprint!("{}", " ".repeat($tab * TAB_INDENT));
-        eprint!($($args)*);
+    ($n: expr, $($args: tt)*) => {
+        eprint!("{}{}", " ".repeat($n * TAB_INDENT), format!($($args)*));
     }
 }
 pub use eprint;
 
 #[macro_export]
 macro_rules! eprintln {
-    ($tab: expr, $($args: tt)*) => {
-        eprint!("{}", " ".repeat($tab * TAB_INDENT));
-        eprintln!($($args)*);
+    ($n: expr, $($args: tt)*) => {
+        eprintln!("{}{}", " ".repeat($n * TAB_INDENT), format!($($args)*));
     }
 }
 pub use eprintln;
+
+#[macro_export]
+macro_rules! warning {
+    ($n: expr, $($args: tt)*) => {
+        log::warn!("{}{}", " ".repeat($n * TAB_INDENT), format!($($args)*));
+    }
+}
+pub use warning;
+
+#[macro_export]
+macro_rules! error {
+    ($n: expr, $($args: tt)*) => {
+        log::error!("{}{}", " ".repeat($n * TAB_INDENT), format!($($args)*));
+    }
+}
+pub use error;

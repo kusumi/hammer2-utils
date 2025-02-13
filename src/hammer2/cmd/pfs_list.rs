@@ -1,6 +1,6 @@
 use std::os::fd::AsRawFd;
 
-pub(crate) fn run(args: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn run(args: &[&str]) -> hammer2_utils::Result<()> {
     let args = if args.len() == 1 && args[0].is_empty() {
         libhammer2::subs::get_hammer2_mounts()?
     } else {
@@ -11,9 +11,9 @@ pub(crate) fn run(args: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
         v
     };
     for (i, f) in args.iter().enumerate() {
-        let mut pfs = libhammer2::ioctl::Hammer2IocPfs::new();
+        let mut pfs = libhammer2::ioctl::IocPfs::new();
         let mut v = vec![];
-        let fp = libhammer2::subs::get_ioctl_handle(f)?;
+        let fp = super::get_ioctl_handle(f)?;
         if i != 0 {
             println!();
         }
@@ -22,13 +22,7 @@ pub(crate) fn run(args: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
             if pfs.name_key == u64::MAX {
                 break;
             }
-            nix::ioctl_readwrite!(
-                pfs_get,
-                libhammer2::ioctl::HAMMER2IOC,
-                libhammer2::ioctl::HAMMER2IOC_PFS_GET,
-                libhammer2::ioctl::Hammer2IocPfs
-            );
-            unsafe { pfs_get(fp.as_raw_fd(), &mut pfs) }?;
+            unsafe { libhammer2::ioctl::pfs_get(fp.as_raw_fd(), &mut pfs) }?;
             let pfs_id_str = libhammer2::subs::get_uuid_string_from_bytes(&pfs.pfs_clid);
             let type_str = if pfs.pfs_type == libhammer2::fs::HAMMER2_PFSTYPE_MASTER {
                 if pfs.pfs_subtype == libhammer2::fs::HAMMER2_PFSSUBTYPE_NONE {

@@ -1,16 +1,10 @@
-use crate::Hammer2Options;
-
 use std::os::fd::AsRawFd;
 
 fn format_prefix(name: &str) -> String {
     format!("pfs_create({name})")
 }
 
-pub(crate) fn run(
-    f: &str,
-    name: &str,
-    opt: &Hammer2Options,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) fn run(f: &str, name: &str, opt: &crate::Opt) -> hammer2_utils::Result<()> {
     // Default to MASTER if no uuid was specified.
     // Default to SLAVE if a uuid was specified.
     //
@@ -25,23 +19,17 @@ pub(crate) fn run(
     } else {
         opt.pfs_type
     };
-    let mut pfs = libhammer2::ioctl::Hammer2IocPfs::new();
+    let mut pfs = libhammer2::ioctl::IocPfs::new();
     pfs.copy_name(name.as_bytes());
     pfs.pfs_type = pfs_type;
     pfs.pfs_clid = *match &opt.uuid_str {
-        Some(v) => libhammer2::subs::get_uuid_from_str(v.as_str()),
+        Some(v) => libhammer2::subs::get_uuid_from_str(v.as_str())?,
         None => uuid::Uuid::new_v4(),
     }
     .as_bytes();
     pfs.pfs_fsid = *uuid::Uuid::new_v4().as_bytes();
-    let fp = libhammer2::subs::get_ioctl_handle(f)?;
-    nix::ioctl_readwrite!(
-        pfs_create,
-        libhammer2::ioctl::HAMMER2IOC,
-        libhammer2::ioctl::HAMMER2IOC_PFS_CREATE,
-        libhammer2::ioctl::Hammer2IocPfs
-    );
-    match unsafe { pfs_create(fp.as_raw_fd(), &mut pfs) } {
+    let fp = super::get_ioctl_handle(f)?;
+    match unsafe { libhammer2::ioctl::pfs_create(fp.as_raw_fd(), &mut pfs) } {
         Err(nix::errno::Errno::EEXIST) => {
             log::error!(
                 "NOTE: Typically the same name is used for cluster elements on \

@@ -9,15 +9,15 @@ pub(crate) fn run(devpath: &str, opt: &crate::Opt) -> hammer2_utils::Result<()> 
     println!(
         "{}",
         fso.get_root_volume()
-            .ok_or(nix::errno::Errno::ENOENT)?
+            .ok_or(nix::errno::Errno::ENODEV)?
             .get_path()
     );
     for i in 0..libhammer2::fs::HAMMER2_NUM_VOLHDRS {
-        let vol = fso.get_root_volume_mut().ok_or(nix::errno::Errno::ENOENT)?;
+        let vol = fso.get_root_volume_mut().ok_or(nix::errno::Errno::ENODEV)?;
         let offset = libhammer2::volume::get_volume_data_offset(i);
         if offset < vol.get_size() {
             let buf = vol.preadx(libhammer2::fs::HAMMER2_VOLUME_BYTES, offset)?;
-            let voldata = libhammer2::util::align_to::<libhammer2::fs::Hammer2VolumeData>(&buf);
+            let voldata = libhammer2::ondisk::media_as_volume_data(&buf);
             crate::show::print_volume_summary(
                 libhammer2::fs::HAMMER2_ROOT_VOLUME.into(),
                 i,

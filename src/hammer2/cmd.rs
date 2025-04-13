@@ -21,6 +21,7 @@ pub(crate) mod snapshot;
 pub(crate) mod stat;
 pub(crate) mod volhdr;
 pub(crate) mod volume_list;
+pub(crate) mod volume_list2;
 
 use std::os::fd::AsRawFd;
 

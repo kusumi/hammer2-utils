@@ -1,5 +1,6 @@
 mod fsck;
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Default)]
 struct Opt {
     verbose: bool,

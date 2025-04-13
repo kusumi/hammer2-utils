@@ -237,7 +237,7 @@ fn check_filename(
         let Ok(data) = vol.preadx(psize.try_into()?, poff) else {
             return Ok(None);
         };
-        if !validate_crc(bref, &data, strict) {
+        if !validate_crc(bref, &data, strict)? {
             return Ok(None);
         }
         let buf = libhammer2::util::bin_to_string(&data[..flen])?;
@@ -396,25 +396,21 @@ fn enter_inode(
     if psize == 0 {
         return Ok(());
     }
-    // DragonFly missing this
-    if data.is_empty() || psize != libhammer2::fs::HAMMER2_INODE_BYTES {
-        return Ok(());
-    }
     // Any failures which occur after the I/O has been performed
     // should enter the bref in the negative cache to avoid unnecessary
     // guaranteed-to-fil reissuances of the same (bref, data_off) combo.
-    if data.is_empty() {
+    if data.is_empty() || psize != libhammer2::fs::HAMMER2_INODE_BYTES {
         enter_negative(nhash, stats, bref);
         return Ok(());
     }
     // The blockref looks ok but the real test is whether the
     // inode data it references passes the CRC check.  If it
     // does, it is highly likely that we have a valid inode.
-    if !validate_crc(bref, &data[..psize.try_into()?], strict) {
+    if !validate_crc(bref, &data[..psize.try_into()?], strict)? {
         enter_negative(nhash, stats, bref);
         return Ok(());
     }
-    let inode = libhammer2::extra::media_as::<libhammer2::fs::Hammer2InodeData>(data)[0];
+    let inode = libhammer2::ondisk::media_as_inode_data(data);
     if inode.meta.inum != bref.key {
         enter_negative(nhash, stats, bref);
         return Ok(());
@@ -556,6 +552,7 @@ fn enter_negative(
 // Dump the specified inode (file or directory)
 //
 // This function recurses via dump_dir_data().
+#[allow(clippy::similar_names)]
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_lines)]
 fn dump_tree(
@@ -590,7 +587,7 @@ fn dump_tree(
     if iscan.crc != icrc32::iscsi_crc32(&data[..psize.try_into()?]) {
         return Ok(());
     }
-    let inode = libhammer2::extra::media_as::<libhammer2::fs::Hammer2InodeData>(data)[0];
+    let inode = libhammer2::ondisk::media_as_inode_data(data);
     // Try to limit potential infinite loops.
     if depth > REPINODEDEPTH && iscan.encountered {
         return Ok(());
@@ -736,6 +733,7 @@ fn dump_tree(
 // the (remain) path.
 //
 // This function is part of the dump_tree() recursion mechanism.
+#[allow(clippy::similar_names)]
 #[allow(clippy::too_many_arguments)]
 fn dump_dir_data(
     fso: &mut libhammer2::ondisk::Ondisk,
@@ -761,7 +759,7 @@ fn dump_dir_data(
         match bref.typ {
             libhammer2::fs::HAMMER2_BREF_TYPE_INDIRECT => 'indirect: {
                 if (bref.data_off & MAX_RADIX_MASK) == 0 {
-                    break 'indirect; // DragonFly missing this
+                    break 'indirect;
                 }
                 let Some(vol) = fso.get_volume_mut(bref.data_off) else {
                     break 'indirect;
@@ -786,7 +784,7 @@ fn dump_dir_data(
                 let Ok(data) = vol.preadx(psize, poff) else {
                     break 'indirect;
                 };
-                if !validate_crc(bref, &data, strict) {
+                if !validate_crc(bref, &data, strict)? {
                     break 'indirect;
                 }
                 dump_dir_data(
@@ -799,7 +797,7 @@ fn dump_dir_data(
                     sdc,
                     dest,
                     remain,
-                    &libhammer2::extra::media_as(&data),
+                    &libhammer2::fs::media_as(&data),
                     depth,
                     path_depth,
                     isafile,
@@ -872,6 +870,7 @@ fn dump_dir_data(
 // modes, flags, times, uid, and gid if successful.
 //
 // If the data block recursion fails the file will be renamed .corrupted.
+#[allow(clippy::similar_names)]
 fn dump_inum_file(
     fso: &mut libhammer2::ondisk::Ondisk,
     ihash1: &mut InodeEntryHash,
@@ -910,7 +909,7 @@ fn dump_inum_file(
         let _ = libhammer2::os::chmod(ppath1, 0o600);
     }
     let mut fp = std::fs::File::create(path1)?;
-    let res = if (inode.meta.op_flags & libhammer2::fs::HAMMER2_OPFLAG_DIRECTDATA) != 0 {
+    let res = if inode.meta.has_direct_data() {
         // direct data case
         if inode.meta.size > 0 && inode.meta.size <= libhammer2::fs::HAMMER2_EMBEDDED_BYTES {
             fp.write_all(&inode.u).is_ok()
@@ -979,7 +978,6 @@ fn dump_file_data(
         let Some(vol) = fso.get_volume_mut(bref.data_off) else {
             continue;
         };
-        // DragonFly has redundant EMPTY check here
         let poff = (bref.data_off - vol.get_offset()) & !MAX_RADIX_MASK;
         let psize = 1 << (bref.data_off & MAX_RADIX_MASK);
         if psize > libhammer2::fs::HAMMER2_PBUFSIZE {
@@ -990,13 +988,13 @@ fn dump_file_data(
             res = false;
             continue;
         };
-        if !validate_crc(bref, &data, strict) {
+        if !validate_crc(bref, &data, strict)? {
             res = false;
             continue;
         }
         match bref.typ {
             libhammer2::fs::HAMMER2_BREF_TYPE_INDIRECT => {
-                dump_file_data(fso, fp, fsize, &libhammer2::extra::media_as(&data), strict)?;
+                dump_file_data(fso, fp, fsize, &libhammer2::fs::media_as(&data), strict)?;
             }
             libhammer2::fs::HAMMER2_BREF_TYPE_DATA => 'data: {
                 let nsize = 1 << bref.keybits;
@@ -1028,32 +1026,15 @@ fn dump_file_data(
 
 // Validate the bref data target.  The recovery scan will often attempt to
 // validate invalid elements, so don't spew errors to stderr on failure.
-fn validate_crc(bref: &libhammer2::fs::Hammer2Blockref, data: &[u8], strict: bool) -> bool {
-    let check_algo = libhammer2::fs::dec_check(bref.methods);
-    match check_algo {
+fn validate_crc(
+    bref: &libhammer2::fs::Hammer2Blockref,
+    data: &[u8],
+    strict: bool,
+) -> nix::Result<bool> {
+    Ok(match libhammer2::fs::dec_check(bref.methods) {
         libhammer2::fs::HAMMER2_CHECK_NONE | libhammer2::fs::HAMMER2_CHECK_DISABLED => !strict,
-        libhammer2::fs::HAMMER2_CHECK_ISCSI32 => {
-            bref.check_as::<libhammer2::fs::Hammer2BlockrefCheckIscsi>()
-                .value
-                == icrc32::iscsi_crc32(data)
-        }
-        libhammer2::fs::HAMMER2_CHECK_XXHASH64 => {
-            bref.check_as::<libhammer2::fs::Hammer2BlockrefCheckXxhash64>()
-                .value
-                == libhammer2::xxhash::xxh64(data)
-        }
-        libhammer2::fs::HAMMER2_CHECK_SHA192 => {
-            bref.check_as::<libhammer2::fs::Hammer2BlockrefCheckSha256>()
-                .data
-                == libhammer2::sha::sha256(data).as_slice()
-        }
-        libhammer2::fs::HAMMER2_CHECK_FREEMAP => {
-            bref.check_as::<libhammer2::fs::Hammer2BlockrefCheckFreemap>()
-                .icrc32
-                == icrc32::iscsi_crc32(data)
-        }
-        _ => panic!("{check_algo}"),
-    }
+        _ => libhammer2::ondisk::verify_media(bref, data)?,
+    })
 }
 
 // Convert a hammer2 uuid to a uid or gid.
@@ -1149,7 +1130,7 @@ struct SdcCacheEntry {
 impl SdcCacheEntry {
     fn new() -> Self {
         Self {
-            buf: vec![0; libhammer2::fs::HAMMER2_PBUFSIZE as usize],
+            buf: vec![0; libhammer2::fs::HAMMER2_PBUFSIZE.try_into().unwrap()],
             volid: libhammer2::fs::HAMMER2_MAX_VOLUMES.into(),
             offset: 0,
             last: 0,
@@ -1165,6 +1146,7 @@ impl SdcCacheEntry {
 //
 // All copies that are located are written to destdir with a suffix .00001,
 // .00002, etc.
+#[allow(clippy::similar_names)]
 #[allow(clippy::too_many_lines)]
 pub(crate) fn run(
     devpath: &str,
@@ -1177,6 +1159,10 @@ pub(crate) fn run(
     const INODES_PER_BLOCK: usize =
         (libhammer2::fs::HAMMER2_PBUFSIZE / libhammer2::fs::HAMMER2_INODE_BYTES) as usize;
     const DISPMODULO: u64 = HTABLE_SIZE / 32768;
+
+    if !std::fs::metadata(destdir)?.file_type().is_dir() {
+        return Err(Box::new(nix::errno::Errno::ENOTDIR));
+    }
     InodeEntry::init();
     TopologyEntry::init();
     let mut fso = libhammer2::ondisk::init(devpath, true)?;
@@ -1214,13 +1200,13 @@ pub(crate) fn run(
         let mut poff = loff - offset;
         let mut xdisp = 0;
         while poff < size {
-            let vol = fso.get_volume_mut(loff).ok_or(nix::errno::Errno::ENOENT)?;
+            let vol = fso.get_volume_mut(loff).ok_or(nix::errno::Errno::ENODEV)?;
             let Ok(data) = vol.preadx(libhammer2::fs::HAMMER2_PBUFSIZE, poff) else {
                 // Try to skip possible I/O error.
                 poff += libhammer2::fs::HAMMER2_PBUFSIZE;
                 continue;
             };
-            let brefs = libhammer2::extra::media_as::<libhammer2::fs::Hammer2Blockref>(&data);
+            let brefs = libhammer2::fs::media_as::<libhammer2::fs::Hammer2Blockref>(&data);
             assert_eq!(brefs.len(), libhammer2::fs::HAMMER2_IND_COUNT_MAX);
             for bref in brefs {
                 // Found a possible inode.
@@ -1257,13 +1243,13 @@ pub(crate) fn run(
             // These "inodes" could be seriously corrupt, but if
             // the bref tree is intact that is what we need to
             // get top-level directory entries.
-            let inodes = libhammer2::extra::media_as::<libhammer2::fs::Hammer2InodeData>(&data);
+            let inodes = libhammer2::fs::media_as::<libhammer2::fs::Hammer2InodeData>(&data);
             assert_eq!(inodes.len(), INODES_PER_BLOCK);
             for (i, &inode) in inodes.iter().enumerate() {
                 if inode.meta.inum == 1
                     && inode.meta.iparent == 0
                     && inode.meta.typ == libhammer2::fs::HAMMER2_OBJTYPE_DIRECTORY
-                    && (inode.meta.op_flags & libhammer2::fs::HAMMER2_OPFLAG_PFSROOT) != 0
+                    && inode.meta.is_pfs_root()
                 {
                     enter_inode_untested(
                         &mut ihash1,
@@ -1279,7 +1265,7 @@ pub(crate) fn run(
             media_bytes += n;
             // Update progress
             if !opt.quiet {
-                let vol = fso.get_volume(loff).ok_or(nix::errno::Errno::ENOENT)?;
+                let vol = fso.get_volume(loff).ok_or(nix::errno::Errno::ENODEV)?;
                 xdisp += 1;
                 if xdisp == DISPMODULO || poff == vol.get_size() - n {
                     xdisp = 0;
@@ -1287,7 +1273,7 @@ pub(crate) fn run(
                         "{} inodes scanned, media {:6.2}/{:<3.2}G\r",
                         stats.inode,
                         media_bytes as f64 / 1_000_000_000_f64,
-                        vol.get_size() as f64 / 1_000_000_000_f64
+                        fso.get_total_size() as f64 / 1_000_000_000_f64
                     );
                     std::io::stdout().flush()?;
                 }

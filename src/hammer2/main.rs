@@ -335,7 +335,11 @@ fn cmd_run(cmd: &str, args: &[&str], sel_path: &str, opt: &Opt) -> hammer2_utils
         cmd::volhdr::run(args[0], opt)
     } else if cmd == "volume-list" {
         let args = if args.is_empty() { &[sel_path] } else { args };
-        cmd::volume_list::run(args, opt)
+        if cmd::volume_list::is_supported(args[0])? {
+            cmd::volume_list::run(args, opt)
+        } else {
+            cmd::volume_list2::run(args, opt)
+        }
     } else if cmd == "setcomp" {
         if args.len() < 2 {
             log::error!("Requires compression method and directory/file path");

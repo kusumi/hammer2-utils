@@ -13,7 +13,7 @@ pub(crate) fn run(devpath: &str, opt: &crate::Opt) -> hammer2_utils::Result<()> 
             let offset = libhammer2::volume::get_volume_data_offset(j);
             if offset < vol.get_size() {
                 let buf = vol.preadx(libhammer2::fs::HAMMER2_VOLUME_BYTES, offset)?;
-                let voldata = libhammer2::util::align_to::<libhammer2::fs::Hammer2VolumeData>(&buf);
+                let voldata = libhammer2::ondisk::media_as_volume_data(&buf);
                 crate::show::print_volume_summary(i, j, voldata.mirror_tid);
                 if sopt.all_volume_data || bests[i].0 == j {
                     crate::show::show_volume_data(&mut fso, voldata, j, &sopt, opt)?;

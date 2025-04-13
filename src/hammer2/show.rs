@@ -274,38 +274,14 @@ pub(crate) fn show_blockref(
         8 - type_str.len()
     };
 
-    let bscan = match bref.typ {
-        libhammer2::fs::HAMMER2_BREF_TYPE_INODE => {
-            let ipdata = libhammer2::util::align_to::<libhammer2::fs::Hammer2InodeData>(&media);
-            if (ipdata.meta.op_flags & libhammer2::fs::HAMMER2_OPFLAG_DIRECTDATA) == 0 {
-                ipdata
-                    .u_as::<libhammer2::fs::Hammer2Blockset>()
-                    .as_blockref()
-                    .to_vec()
-            } else {
-                vec![]
-            }
-        }
-        libhammer2::fs::HAMMER2_BREF_TYPE_INDIRECT
-        | libhammer2::fs::HAMMER2_BREF_TYPE_FREEMAP_NODE => libhammer2::extra::media_as(&media),
-        libhammer2::fs::HAMMER2_BREF_TYPE_FREEMAP => {
-            libhammer2::util::align_to::<libhammer2::fs::Hammer2VolumeData>(&media)
-                .freemap_blockset
-                .as_blockref()
-                .to_vec()
-        }
-        libhammer2::fs::HAMMER2_BREF_TYPE_VOLUME => {
-            libhammer2::util::align_to::<libhammer2::fs::Hammer2VolumeData>(&media)
-                .sroot_blockset
-                .as_blockref()
-                .to_vec()
-        }
-        _ => vec![],
+    let bscan = if media.is_empty() {
+        vec![]
+    } else {
+        libhammer2::ondisk::media_as_blockref_safe(bref, &media)
     };
-
     let id = fso
         .get_volume(bref.data_off)
-        .ok_or(nix::errno::Errno::ENOENT)?
+        .ok_or(nix::errno::Errno::ENODEV)?
         .get_id();
     if opt.quiet {
         hammer2_utils::tab::print!(
@@ -363,7 +339,7 @@ pub(crate) fn show_blockref(
     //
     // WARNING! bref->check state may be used for other things when
     // bref has no data (bytes == 0).
-    let radix = bref.data_off & libhammer2::fs::HAMMER2_OFF_MASK_RADIX;
+    let radix = bref.get_radix();
     let bytes = if radix == 0 { 0 } else { 1 << radix };
     let mut failed = false;
     if bytes > 0 && (bref.typ != libhammer2::fs::HAMMER2_BREF_TYPE_DATA || opt.verbose) {
@@ -438,7 +414,7 @@ pub(crate) fn show_blockref(
     // Update statistics.
     if let Some(ref mut stat) = stat {
         if bref.typ == libhammer2::fs::HAMMER2_BREF_TYPE_FREEMAP_LEAF {
-            let bmdata = libhammer2::extra::media_as(&media);
+            let bmdata = libhammer2::fs::media_as(&media);
             for i in 0..libhammer2::fs::HAMMER2_FREEMAP_COUNT {
                 let bmdata = &bmdata[i];
                 let data_off =
@@ -469,7 +445,7 @@ pub(crate) fn show_blockref(
     let tab = tab - sopt.tab;
     if obrace {
         if bref.typ == libhammer2::fs::HAMMER2_BREF_TYPE_INODE {
-            let ipdata = libhammer2::util::align_to::<libhammer2::fs::Hammer2InodeData>(&media);
+            let ipdata = libhammer2::ondisk::media_as_inode_data(&media);
             hammer2_utils::tab::println!(
                 tab,
                 "}} ({}.{}, \"{}\")",
@@ -500,13 +476,11 @@ fn show_blockref_data(
         }
         libhammer2::fs::HAMMER2_BREF_TYPE_INODE => {
             println!("{{");
-            let ipdata = libhammer2::util::align_to::<libhammer2::fs::Hammer2InodeData>(media);
+            let ipdata = libhammer2::ondisk::media_as_inode_data(media);
             let meta = &ipdata.meta;
             hammer2_utils::tab::println!(tab, "filename \"{}\"", ipdata.get_filename_string()?);
             hammer2_utils::tab::println!(tab, "version  {}", meta.version);
-            let ispfs = (meta.op_flags & libhammer2::fs::HAMMER2_OPFLAG_PFSROOT) != 0
-                || meta.pfs_type == libhammer2::fs::HAMMER2_PFSTYPE_SUPROOT;
-            if ispfs {
+            if meta.is_root() {
                 hammer2_utils::tab::println!(
                     tab,
                     "pfs_st   {} ({})",
@@ -559,9 +533,7 @@ fn show_blockref_data(
             hammer2_utils::tab::println!(tab, "mode     {:<7o}", meta.mode);
             hammer2_utils::tab::println!(tab, "inum     {:#018x}", meta.inum);
             hammer2_utils::tab::print!(tab, "size     {} ", meta.size);
-            if (meta.op_flags & libhammer2::fs::HAMMER2_OPFLAG_DIRECTDATA) != 0
-                && meta.size <= libhammer2::fs::HAMMER2_EMBEDDED_BYTES
-            {
+            if meta.has_direct_data() && meta.size <= libhammer2::fs::HAMMER2_EMBEDDED_BYTES {
                 println!("(embedded data)");
             } else {
                 println!();
@@ -581,7 +553,7 @@ fn show_blockref_data(
                 "checkalg {}",
                 libhammer2::subs::get_check_mode_string(meta.check_algo)
             );
-            if ispfs {
+            if meta.is_root() {
                 hammer2_utils::tab::println!(tab, "pfs_nmas {}", meta.pfs_nmasters);
                 hammer2_utils::tab::println!(
                     tab,
@@ -647,7 +619,7 @@ fn show_blockref_data(
         libhammer2::fs::HAMMER2_BREF_TYPE_FREEMAP_NODE
         | libhammer2::fs::HAMMER2_BREF_TYPE_FREEMAP_LEAF => {
             println!("{{");
-            let mut tmp = bref.data_off & !libhammer2::fs::HAMMER2_OFF_MASK_RADIX;
+            let mut tmp = bref.get_raw_data_off();
             tmp &= libhammer2::fs::HAMMER2_SEGMASK;
             tmp /= libhammer2::fs::HAMMER2_PBUFSIZE;
             let mut tmp = usize::try_from(tmp)?;
@@ -657,7 +629,7 @@ fn show_blockref_data(
             tmp /= libhammer2::fs::HAMMER2_ZONE_FREEMAP_INC;
             hammer2_utils::tab::println!(tab, "rotation={}", tmp);
             if bref.typ == libhammer2::fs::HAMMER2_BREF_TYPE_FREEMAP_LEAF {
-                let bmdata = libhammer2::extra::media_as::<libhammer2::fs::Hammer2BmapData>(media);
+                let bmdata = libhammer2::fs::media_as::<libhammer2::fs::Hammer2BmapData>(media);
                 for i in 0..libhammer2::fs::HAMMER2_FREEMAP_COUNT {
                     let bmdata = &bmdata[i];
                     let data_off =
@@ -684,7 +656,7 @@ fn show_blockref_data(
             Ok(true)
         }
         libhammer2::fs::HAMMER2_BREF_TYPE_FREEMAP | libhammer2::fs::HAMMER2_BREF_TYPE_VOLUME => {
-            let voldata = libhammer2::util::align_to::<libhammer2::fs::Hammer2VolumeData>(media);
+            let voldata = libhammer2::ondisk::media_as_volume_data(media);
             print!(
                 "mirror_tid={:016x} freemap_tid={:016x} ",
                 voldata.mirror_tid, voldata.freemap_tid
@@ -708,7 +680,7 @@ fn count_blocks(
     assert_eq!(bits, 64);
     let value16 = u64::try_from(value)?;
     assert!(value16 < 4);
-    let value64 = value16 << 6 | value16 << 4 | value16 << 2 | value16;
+    let value64 = (value16 << 6) | (value16 << 4) | (value16 << 2) | value16;
     assert!(value64 < 256);
 
     for i in 0..libhammer2::fs::HAMMER2_BMAP_ELEMENTS {

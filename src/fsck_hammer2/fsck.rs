@@ -113,6 +113,7 @@ impl DeltaStats {
     }
 }
 
+#[allow(clippy::struct_field_names)]
 #[derive(Clone, Copy, Debug, Default)]
 struct VolumeDeltaStats {
     total_inode: u64,
@@ -167,13 +168,13 @@ fn test_volume_header(
         if opt.scan_best && i != zone {
             continue;
         }
-        let vol = fso.get_root_volume_mut().ok_or(nix::errno::Errno::ENOENT)?;
+        let vol = fso.get_root_volume_mut().ok_or(nix::errno::Errno::ENODEV)?;
         let offset = libhammer2::volume::get_volume_data_offset(i);
         if offset < vol.get_size() {
             let broot = alloc_root_blockref(i, libhammer2::fs::HAMMER2_BREF_TYPE_EMPTY)?;
             print_zone_summary(0, i, zone, &broot, opt);
             let buf = vol.preadx(libhammer2::fs::HAMMER2_VOLUME_BYTES, offset)?;
-            if let Err(e) = verify_volume_header(libhammer2::util::align_to(&buf)) {
+            if let Err(e) = verify_volume_header(libhammer2::ondisk::media_as_volume_data(&buf)) {
                 if failure.is_none() {
                     failure = Some(e);
                 }
@@ -202,7 +203,7 @@ fn test_blockref(
         if opt.scan_best && i != zone {
             continue;
         }
-        let vol = fso.get_root_volume_mut().ok_or(nix::errno::Errno::ENOENT)?;
+        let vol = fso.get_root_volume_mut().ok_or(nix::errno::Errno::ENODEV)?;
         let offset = libhammer2::volume::get_volume_data_offset(i);
         if offset < vol.get_size() {
             let broot = alloc_root_blockref(i, typ)?;
@@ -238,7 +239,7 @@ fn test_pfs_blockref(
         if opt.scan_best && i != zone {
             continue;
         }
-        let vol = fso.get_root_volume_mut().ok_or(nix::errno::Errno::ENOENT)?;
+        let vol = fso.get_root_volume_mut().ok_or(nix::errno::Errno::ENODEV)?;
         let offset = libhammer2::volume::get_volume_data_offset(i);
         if offset < vol.get_size() {
             let typ = libhammer2::fs::HAMMER2_BREF_TYPE_VOLUME;
@@ -266,14 +267,14 @@ fn test_pfs_blockref(
                 let mut found = false;
                 let ipdata = m.msg_as::<libhammer2::fs::Hammer2InodeData>();
                 let f = ipdata.get_filename_string()?;
-                if !opt.pfs_names.is_empty() {
+                if opt.pfs_names.is_empty() {
+                    found = true;
+                } else {
                     for s in &opt.pfs_names {
                         if *s == f {
                             found = true;
                         }
                     }
-                } else {
-                    found = true;
                 }
                 if !found {
                     continue;
@@ -419,7 +420,7 @@ fn print_blockref_stats(
         ),
         _ => panic!("{}", bstats.typ),
     };
-    let buf = if let Some(v) = buf.get(..libhammer2::subs::get_chars_per_line()) {
+    let buf = if let Some(v) = buf.get(..get_chars_per_line()) {
         v.to_string()
     } else {
         buf
@@ -431,6 +432,18 @@ fn print_blockref_stats(
         std::io::stdout().flush()?;
     }
     Ok(())
+}
+
+fn get_chars_per_line() -> usize {
+    if let Some((terminal_size::Width(w), terminal_size::Height(_))) =
+        terminal_size::terminal_size()
+    {
+        w.into()
+    } else if let Ok(v) = std::env::var("COLUMNS") {
+        v.parse().unwrap_or(80)
+    } else {
+        80 // last resort
+    }
 }
 
 fn verify_volume_header(voldata: &libhammer2::fs::Hammer2VolumeData) -> nix::Result<()> {
@@ -582,94 +595,25 @@ fn verify_blockref(
     }
 
     if bytes != 0 {
-        match libhammer2::fs::dec_check(bref.methods) {
-            libhammer2::fs::HAMMER2_CHECK_ISCSI32 => {
-                let cv = icrc32::iscsi_crc32(&media);
-                if bref
-                    .check_as::<libhammer2::fs::Hammer2BlockrefCheckIscsi>()
-                    .value
-                    != cv
-                {
-                    let msg = "Bad HAMMER2_CHECK_ISCSI32";
-                    add_blockref_entry_from_str(&mut bstats.root, bref, msg);
-                    print_blockref_debug(bref, msg, opt);
-                    failed = true;
-                }
+        if let Ok(v) = libhammer2::ondisk::verify_media(bref, &media) {
+            if !v {
+                failed = true;
+                let msg = match libhammer2::fs::dec_check(bref.methods) {
+                    libhammer2::fs::HAMMER2_CHECK_ISCSI32 => "Bad HAMMER2_CHECK_ISCSI32",
+                    libhammer2::fs::HAMMER2_CHECK_XXHASH64 => "Bad HAMMER2_CHECK_XXHASH64",
+                    libhammer2::fs::HAMMER2_CHECK_SHA192 => "Bad HAMMER2_CHECK_SHA192",
+                    libhammer2::fs::HAMMER2_CHECK_FREEMAP => "Bad HAMMER2_CHECK_FREEMAP",
+                    _ => return Err(Box::new(nix::errno::Errno::EINVAL)),
+                };
+                add_blockref_entry_from_str(&mut bstats.root, bref, msg);
+                print_blockref_debug(bref, msg, opt);
             }
-            libhammer2::fs::HAMMER2_CHECK_XXHASH64 => {
-                let cv = libhammer2::xxhash::xxh64(&media);
-                if bref
-                    .check_as::<libhammer2::fs::Hammer2BlockrefCheckXxhash64>()
-                    .value
-                    != cv
-                {
-                    let msg = "Bad HAMMER2_CHECK_XXHASH64";
-                    add_blockref_entry_from_str(&mut bstats.root, bref, msg);
-                    print_blockref_debug(bref, msg, opt);
-                    failed = true;
-                }
-            }
-            libhammer2::fs::HAMMER2_CHECK_SHA192 => {
-                let cv = libhammer2::sha::sha256(&media);
-                if bref
-                    .check_as::<libhammer2::fs::Hammer2BlockrefCheckSha256>()
-                    .data
-                    != cv.as_slice()
-                {
-                    let msg = "Bad HAMMER2_CHECK_SHA192";
-                    add_blockref_entry_from_str(&mut bstats.root, bref, msg);
-                    print_blockref_debug(bref, msg, opt);
-                    failed = true;
-                }
-            }
-            libhammer2::fs::HAMMER2_CHECK_FREEMAP => {
-                let cv = icrc32::iscsi_crc32(&media);
-                if bref
-                    .check_as::<libhammer2::fs::Hammer2BlockrefCheckFreemap>()
-                    .icrc32
-                    != cv
-                {
-                    let msg = "Bad HAMMER2_CHECK_FREEMAP";
-                    add_blockref_entry_from_str(&mut bstats.root, bref, msg);
-                    print_blockref_debug(bref, msg, opt);
-                    failed = true;
-                }
-            }
-            _ => (),
         }
-        let bscan = match bref.typ {
-            libhammer2::fs::HAMMER2_BREF_TYPE_INODE => {
-                let ipdata = libhammer2::util::align_to::<libhammer2::fs::Hammer2InodeData>(&media);
-                if (ipdata.meta.op_flags & libhammer2::fs::HAMMER2_OPFLAG_DIRECTDATA) == 0 {
-                    ipdata
-                        .u_as::<libhammer2::fs::Hammer2Blockset>()
-                        .as_blockref()
-                        .to_vec()
-                } else {
-                    vec![]
-                }
-            }
-            libhammer2::fs::HAMMER2_BREF_TYPE_INDIRECT
-            | libhammer2::fs::HAMMER2_BREF_TYPE_FREEMAP_NODE => libhammer2::extra::media_as(&media),
-            libhammer2::fs::HAMMER2_BREF_TYPE_FREEMAP => {
-                libhammer2::util::align_to::<libhammer2::fs::Hammer2VolumeData>(&media)
-                    .freemap_blockset
-                    .as_blockref()
-                    .to_vec()
-            }
-            libhammer2::fs::HAMMER2_BREF_TYPE_VOLUME => {
-                libhammer2::util::align_to::<libhammer2::fs::Hammer2VolumeData>(&media)
-                    .sroot_blockset
-                    .as_blockref()
-                    .to_vec()
-            }
-            _ => vec![],
-        };
         let norecurse = if opt.force { false } else { norecurse };
         // If failed, no recurse, but still verify its direct children.
         // Beyond that is probably garbage.
         if !norecurse {
-            for bref in bscan {
+            for bref in &libhammer2::ondisk::media_as_blockref_safe(bref, &media) {
                 let ds = verify_blockref(fso, bref, failed, bstats, droot, opt)?;
                 if !failed {
                     dstats.add(&ds);
@@ -724,24 +668,22 @@ fn scan_pfs_blockref(
     let mut v = vec![];
     let bscan = match bref.typ {
         libhammer2::fs::HAMMER2_BREF_TYPE_INODE => {
-            let ipdata = libhammer2::util::align_to::<libhammer2::fs::Hammer2InodeData>(&media);
-            if ipdata.meta.pfs_type == libhammer2::fs::HAMMER2_PFSTYPE_SUPROOT {
+            let ipdata = libhammer2::ondisk::media_as_inode_data(&media);
+            if ipdata.meta.is_sup_root() {
                 ipdata
                     .u_as::<libhammer2::fs::Hammer2Blockset>()
                     .as_blockref()
                     .to_vec()
-            } else {
-                if (ipdata.meta.op_flags & libhammer2::fs::HAMMER2_OPFLAG_PFSROOT) != 0 {
-                    v.push(BlockrefMessage::new_from(bref, ipdata));
-                } else {
-                    panic!("{}", ipdata.meta.inum); // should only see SUPROOT or PFS
-                }
+            } else if ipdata.meta.is_pfs_root() {
+                v.push(BlockrefMessage::new_from(bref, ipdata));
                 vec![]
+            } else {
+                panic!("{}", ipdata.meta.inum); // should only see SUPROOT or PFS
             }
         }
-        libhammer2::fs::HAMMER2_BREF_TYPE_INDIRECT => libhammer2::extra::media_as(&media),
+        libhammer2::fs::HAMMER2_BREF_TYPE_INDIRECT => libhammer2::fs::media_as(&media),
         libhammer2::fs::HAMMER2_BREF_TYPE_VOLUME => {
-            libhammer2::util::align_to::<libhammer2::fs::Hammer2VolumeData>(&media)
+            libhammer2::ondisk::media_as_volume_data(&media)
                 .sroot_blockset
                 .as_blockref()
                 .to_vec()
@@ -764,7 +706,7 @@ fn format_media(
     let mut v = vec![];
     match bref.typ {
         libhammer2::fs::HAMMER2_BREF_TYPE_INODE => {
-            let ipdata = libhammer2::util::align_to::<libhammer2::fs::Hammer2InodeData>(media);
+            let ipdata = libhammer2::ondisk::media_as_inode_data(media);
             let meta = &ipdata.meta;
             v.push(hammer2_utils::tab::format!(
                 tab,
@@ -776,9 +718,7 @@ fn format_media(
                 "version {}\n",
                 meta.version
             ));
-            let ispfs = (meta.op_flags & libhammer2::fs::HAMMER2_OPFLAG_PFSROOT) != 0
-                || meta.pfs_type == libhammer2::fs::HAMMER2_PFSTYPE_SUPROOT;
-            if ispfs {
+            if meta.is_root() {
                 v.push(hammer2_utils::tab::format!(
                     tab,
                     "pfs_subtype {} ({})\n",
@@ -847,9 +787,7 @@ fn format_media(
                 meta.inum
             ));
             v.push(hammer2_utils::tab::format!(tab, "size {} ", meta.size));
-            if (meta.op_flags & libhammer2::fs::HAMMER2_OPFLAG_DIRECTDATA) != 0
-                && meta.size <= libhammer2::fs::HAMMER2_EMBEDDED_BYTES
-            {
+            if meta.has_direct_data() && meta.size <= libhammer2::fs::HAMMER2_EMBEDDED_BYTES {
                 v.push("(embedded data)\n".to_string());
             } else {
                 v.push("\n".to_string());
@@ -885,7 +823,7 @@ fn format_media(
                 "check_algo {}\n",
                 libhammer2::subs::get_check_mode_string(meta.check_algo)
             ));
-            if ispfs {
+            if meta.is_root() {
                 v.push(hammer2_utils::tab::format!(
                     tab,
                     "pfs_nmasters {}\n",
@@ -943,7 +881,7 @@ fn format_media(
         }
         libhammer2::fs::HAMMER2_BREF_TYPE_INDIRECT
         | libhammer2::fs::HAMMER2_BREF_TYPE_FREEMAP_NODE => {
-            for (i, bref) in libhammer2::extra::media_as::<libhammer2::fs::Hammer2Blockref>(media)
+            for (i, bref) in libhammer2::fs::media_as::<libhammer2::fs::Hammer2Blockref>(media)
                 .iter()
                 .enumerate()
             {
@@ -986,7 +924,7 @@ fn format_media(
             ));
         }
         libhammer2::fs::HAMMER2_BREF_TYPE_FREEMAP_LEAF => {
-            let bmdata = libhammer2::extra::media_as::<libhammer2::fs::Hammer2BmapData>(media);
+            let bmdata = libhammer2::fs::media_as::<libhammer2::fs::Hammer2BmapData>(media);
             for i in 0..libhammer2::fs::HAMMER2_FREEMAP_COUNT {
                 let bmdata = &bmdata[i];
                 let data_off =
@@ -1093,5 +1031,18 @@ mod tests {
         eq!(m.msg, m.msg_as::<super::DeltaStats>());
         let m = super::BlockrefMessage::new_from(&bref, &libhammer2::fs::Hammer2InodeData::new());
         eq!(m.msg, m.msg_as::<libhammer2::fs::Hammer2InodeData>());
+    }
+
+    #[test]
+    fn test_terminal_size() {
+        match terminal_size::terminal_size() {
+            Some(v) => {
+                println!("{v:?}");
+                let (terminal_size::Width(w), terminal_size::Height(h)) = v;
+                assert!(w > 0);
+                assert!(h > 0);
+            }
+            None => panic!(""),
+        }
     }
 }

@@ -591,7 +591,7 @@ pub(crate) fn mkfs(args: &[&str], opt: &mut Opt) -> hammer2_utils::Result<()> {
         resid = opt.fs_size[0];
         assert!(resid >= libhammer2::fs::HAMMER2_FREEMAP_LEVEL1_SIZE);
     } else if n > 1 && nvolumes != n {
-        log::error!("Invalid filesystem size count {} vs {}", n, nvolumes);
+        log::error!("Invalid filesystem size count {n} vs {nvolumes}");
         return Err(Box::new(nix::errno::Errno::EINVAL));
     }
 
@@ -709,7 +709,9 @@ pub(crate) fn mkfs(args: &[&str], opt: &mut Opt) -> hammer2_utils::Result<()> {
     }
     if opt.debug {
         println!("---------------------------------------------");
-        fso.print_volumes();
+        for s in &fso.fmt_volumes() {
+            println!("{s}");
+        }
     }
 
     Ok(())

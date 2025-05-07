@@ -1,5 +1,3 @@
-// DragonFly doesn't support "comma separated string of options"
-// despite description below from mount_hammer2(8), but Rust does.
 pub(crate) fn get_getopts() -> getopts::Options {
     let mut gopt = getopts::Options::new();
     gopt.optopt(
@@ -39,11 +37,11 @@ pub(crate) fn mount(matches: &getopts::Matches) -> hammer2_utils::Result<()> {
         for &s in &v.split(',').collect::<Vec<&str>>() {
             if s.find('=').is_none() {
                 // Ignore if None (e.g. "rw").
-                if let Some(v) = libhammer2::os::get_mount_flag(s) {
+                if let Some(v) = libfs::os::get_mount_flag(s) {
                     mntflags.insert(v);
                 }
                 // e.g. hammer2_remount() uses "ro", not MNT_RDONLY.
-                opts.push(libhammer2::util::new_cstring!(s)?);
+                opts.push(libfs::string::new_cstring!(s)?);
             } else {
                 return Err(Box::new(nix::errno::Errno::EINVAL));
             }
@@ -92,10 +90,10 @@ pub(crate) fn mount(matches: &getopts::Matches) -> hammer2_utils::Result<()> {
     // Resolve the mountpoint with realpath(3).
     let cdir = std::fs::canonicalize(cdir)?;
 
-    let from = libhammer2::util::new_cstring!("from")?;
-    let cdev = libhammer2::util::new_cstring!(&*cdev)?;
+    let from = libfs::string::new_cstring!("from")?;
+    let cdev = libfs::string::new_cstring!(&*cdev)?;
     // FreeBSD doesn't support hflags, but hflags itself is required.
-    let hflags_str = libhammer2::util::new_cstring!("hflags")?;
+    let hflags_str = libfs::string::new_cstring!("hflags")?;
     let mut hflags: u32 = 0;
 
     let mut m = nix::mount::Nmount::new();

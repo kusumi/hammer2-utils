@@ -7,6 +7,6 @@ pub(crate) fn usage(prog: &str, gopt: &getopts::Options) {
 }
 
 pub(crate) fn mount(_matches: &getopts::Matches) -> hammer2_utils::Result<()> {
-    log::error!("{} is unsupported", libhammer2::util::get_os_name());
+    log::error!("{} is unsupported", libfs::os::get_name());
     Err(Box::new(nix::errno::Errno::EOPNOTSUPP))
 }

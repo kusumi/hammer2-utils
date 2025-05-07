@@ -4,7 +4,7 @@ fn hexdump_inode(meta: &libhammer2::fs::Hammer2InodeMeta, opt: &crate::Opt) {
     if !opt.verbose {
         return;
     }
-    let data = libhammer2::util::any_as_u8_slice(meta);
+    let data = libfs::cast::as_u8_slice(meta);
     for (i, x) in data.iter().enumerate() {
         print!("{x:02X}");
         if (i + 1) % 16 == 0 {

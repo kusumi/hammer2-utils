@@ -1,4 +1,5 @@
 pub(crate) mod bulkfree;
+pub(crate) mod cidprune;
 pub(crate) mod cleanup;
 pub(crate) mod destroy;
 pub(crate) mod destroy_inum;

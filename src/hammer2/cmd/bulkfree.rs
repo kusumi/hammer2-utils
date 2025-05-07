@@ -4,7 +4,7 @@ fn get_usermem() -> u64 {
     let mut usermem = 0;
     let mut usermem_size = std::mem::size_of_val(&usermem);
     if unsafe {
-        libhammer2::os::sysctlbyname(
+        libfs::os::sysctlbyname(
             c"hw.usermem".as_ptr(),
             std::ptr::from_mut::<u64>(&mut usermem).cast::<libc::c_void>(),
             std::ptr::from_mut::<libc::size_t>(&mut usermem_size),

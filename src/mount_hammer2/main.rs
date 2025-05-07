@@ -7,7 +7,7 @@ fn main() {
     }
 
     let args: Vec<String> = std::env::args().collect();
-    let Some(prog) = &hammer2_utils::util::get_basename(&args[0]) else {
+    let Some(prog) = &libfs::fs::get_base_name(&args[0]) else {
         log::error!("{args:?}");
         std::process::exit(1);
     };

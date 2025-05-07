@@ -40,7 +40,7 @@ fn main() {
     }
 
     let args: Vec<String> = std::env::args().collect();
-    let Some(prog) = &hammer2_utils::util::get_basename(&args[0]) else {
+    let Some(prog) = &libfs::fs::get_base_name(&args[0]) else {
         log::error!("{args:?}");
         std::process::exit(1);
     };
@@ -74,11 +74,6 @@ fn main() {
     if matches.opt_present("help") {
         usage(prog, &gopt);
         std::process::exit(0);
-    }
-
-    if !libhammer2::util::is_os_supported() {
-        log::error!("{} is unsupported", libhammer2::util::get_os_name());
-        std::process::exit(1);
     }
 
     let mut opt = Opt::new();

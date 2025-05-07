@@ -13,7 +13,7 @@ fn get_hammer2_version() -> u32 {
     let mut version = libhammer2::fs::HAMMER2_VOL_VERSION_DEFAULT;
     let mut version_size = std::mem::size_of_val(&version);
     if unsafe {
-        libhammer2::os::sysctlbyname(
+        libfs::os::sysctlbyname(
             c"vfs.hammer2.supported_version".as_ptr(),
             std::ptr::from_mut::<u32>(&mut version).cast::<libc::c_void>(),
             std::ptr::from_mut::<libc::size_t>(&mut version_size),
@@ -191,7 +191,7 @@ pub(crate) fn get_size(s: &str, minval: u64, maxval: u64, powerof2: i32) -> nix:
 }
 
 fn get_current_time() -> Result<u64, std::time::SystemTimeError> {
-    Ok(libhammer2::util::get_current_time()? * 1_000_000)
+    Ok(libfs::time::get_current()? * 1_000_000)
 }
 
 fn get_buffer() -> hammer2_utils::Result<Vec<u8>> {
@@ -291,11 +291,11 @@ fn format_inode(
         rawip
             .meta
             .pfs_clid
-            .copy_from_slice(libhammer2::util::any_as_u8_slice(&pfs_clid));
+            .copy_from_slice(libfs::cast::as_u8_slice(&pfs_clid));
         rawip
             .meta
             .pfs_fsid
-            .copy_from_slice(libhammer2::util::any_as_u8_slice(&pfs_fsid));
+            .copy_from_slice(libfs::cast::as_u8_slice(&pfs_fsid));
         opt.pfsclid.push(pfs_clid);
         opt.pfsfsid.push(pfs_fsid);
         rawip.meta.pfs_type = libhammer2::fs::HAMMER2_PFSTYPE_MASTER;
@@ -315,7 +315,7 @@ fn format_inode(
         bref.copyid = libhammer2::fs::HAMMER2_COPYID_LOCAL;
         bref.keybits = 0;
         bref.check_as_mut::<libhammer2::fs::Hammer2BlockrefCheckXxhash64>()
-            .value = libhammer2::xxhash::xxh64(libhammer2::util::any_as_u8_slice(&rawip));
+            .value = libhammer2::xxhash::xxh64(libfs::cast::as_u8_slice(&rawip));
         bref.typ = libhammer2::fs::HAMMER2_BREF_TYPE_INODE;
         bref.methods = libhammer2::fs::enc_check(libhammer2::fs::HAMMER2_CHECK_XXHASH64)
             | libhammer2::fs::enc_comp(libhammer2::fs::HAMMER2_COMP_NONE);
@@ -359,11 +359,11 @@ fn format_inode(
     rawip
         .meta
         .pfs_clid
-        .copy_from_slice(libhammer2::util::any_as_u8_slice(&opt.supclid));
+        .copy_from_slice(libfs::cast::as_u8_slice(&opt.supclid));
     rawip
         .meta
         .pfs_fsid
-        .copy_from_slice(libhammer2::util::any_as_u8_slice(&opt.supfsid));
+        .copy_from_slice(libfs::cast::as_u8_slice(&opt.supfsid));
     rawip.meta.pfs_type = libhammer2::fs::HAMMER2_PFSTYPE_SUPROOT;
     let filename = "SUPROOT";
     let name_len = filename.len();
@@ -392,7 +392,7 @@ fn format_inode(
     sroot_blockref.keybits = 0;
     sroot_blockref
         .check_as_mut::<libhammer2::fs::Hammer2BlockrefCheckXxhash64>()
-        .value = libhammer2::xxhash::xxh64(libhammer2::util::any_as_u8_slice(&rawip));
+        .value = libhammer2::xxhash::xxh64(libfs::cast::as_u8_slice(&rawip));
     sroot_blockref.typ = libhammer2::fs::HAMMER2_BREF_TYPE_INODE;
     sroot_blockref.methods = libhammer2::fs::enc_check(libhammer2::fs::HAMMER2_CHECK_XXHASH64)
         | libhammer2::fs::enc_comp(libhammer2::fs::HAMMER2_COMP_AUTOZERO);
@@ -418,7 +418,7 @@ fn copy_inode_to_buffer(
     bref: &libhammer2::fs::Hammer2Blockref,
     rawip: &libhammer2::fs::Hammer2InodeData,
 ) -> hammer2_utils::Result<()> {
-    let rawip = libhammer2::util::any_as_u8_slice(rawip);
+    let rawip = libfs::cast::as_u8_slice(rawip);
     let offset = (bref.data_off & libhammer2::fs::HAMMER2_OFF_MASK_LO).try_into()?;
     let beg = offset;
     let end = offset + rawip.len();
@@ -503,10 +503,10 @@ fn format(
 
     voldata
         .fsid
-        .copy_from_slice(libhammer2::util::any_as_u8_slice(&opt.volfsid));
+        .copy_from_slice(libfs::cast::as_u8_slice(&opt.volfsid));
     voldata
         .fstype
-        .copy_from_slice(libhammer2::util::any_as_u8_slice(&opt.fstype));
+        .copy_from_slice(libfs::cast::as_u8_slice(&opt.fstype));
 
     voldata.peer_type = DMSG_PEER_HAMMER2; // LNK_CONN identification
 
@@ -544,7 +544,7 @@ fn format(
         if offset >= vol.get_size() {
             break;
         }
-        vol.pwrite(libhammer2::util::any_as_u8_slice(&voldata), offset)?;
+        vol.pwrite(libfs::cast::as_u8_slice(&voldata), offset)?;
     }
     Ok(vol.fsync()?)
 }

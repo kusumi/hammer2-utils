@@ -27,23 +27,23 @@ pub(crate) fn run(args: &[&str], opt: &crate::Opt) -> hammer2_utils::Result<()> 
         let nvolumes = vol.nvolumes.try_into()?;
         let mut w = 0;
         for entry in volumes.iter().take(nvolumes) {
-            let n = libhammer2::util::bin_to_string(&entry.path)?.len();
+            let n = libfs::string::b2s(&entry.path)?.len();
             if n > w {
                 w = n;
             }
         }
         if opt.quiet {
             for entry in volumes.iter().take(nvolumes) {
-                println!("{}", libhammer2::util::bin_to_string(&entry.path)?);
+                println!("{}", libfs::string::b2s(&entry.path)?);
             }
         } else {
             println!("version {}", vol.version);
-            println!("@{}", libhammer2::util::bin_to_string(&vol.pfs_name)?);
+            println!("@{}", libfs::string::b2s(&vol.pfs_name)?);
             for entry in volumes.iter().take(nvolumes) {
                 print!(
                     "volume{:<2} {:<w$} {}",
                     entry.id,
-                    libhammer2::util::bin_to_string(&entry.path)?,
+                    libfs::string::b2s(&entry.path)?,
                     libhammer2::subs::get_size_string(entry.size)
                 );
                 if opt.verbose {

@@ -38,7 +38,7 @@ pub(crate) fn run(args: &[&str]) -> hammer2_utils::Result<()> {
         v.sort_by_key(|t| t.0);
         println!("Type        ClusterId (pfs_clid)                 Label on {f}");
         for p in &v {
-            println!("{} {}", p.1, libhammer2::util::bin_to_string(&p.0)?);
+            println!("{} {}", p.1, libfs::string::b2s(&p.0)?);
         }
     }
     Ok(())

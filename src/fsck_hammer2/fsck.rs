@@ -27,12 +27,12 @@ impl BlockrefMessage {
         T: Clone + Copy,
     {
         let mut m = BlockrefMessage::new(bref);
-        *libhammer2::util::align_head_to_mut(&mut m.msg) = *x;
+        *libfs::cast::align_head_to_mut(&mut m.msg) = *x;
         m
     }
 
     fn msg_as<T>(&self) -> &T {
-        libhammer2::util::align_head_to(&self.msg)
+        libfs::cast::align_head_to(&self.msg)
     }
 }
 
@@ -367,7 +367,7 @@ fn print_blockref_entry(
         for m in e {
             eprintln!(
                 "{}",
-                format_blockref(1, &m.bref, &libhammer2::util::bin_to_string(&m.msg)?)
+                format_blockref(1, &m.bref, &libfs::string::b2s(&m.msg)?)
             );
             if opt.verbose {
                 match fso.read_media(&m.bref) {
@@ -1015,7 +1015,7 @@ mod tests {
         for s in [String::new(), "A".to_string(), "A".repeat(1024)] {
             let m = super::BlockrefMessage::new_from_str(&bref, &s);
             assert_eq!(
-                match libhammer2::util::bin_to_string(&m.msg) {
+                match libfs::string::b2s(&m.msg) {
                     Ok(v) => v,
                     Err(e) => panic!("{e}"),
                 },

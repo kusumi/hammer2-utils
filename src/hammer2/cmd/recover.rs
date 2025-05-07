@@ -1,4 +1,4 @@
-use libhammer2::os::StatExt;
+use libfs::os::StatExt;
 use std::io::Write;
 
 // hammer2 recover <devpath> <path> <destdir>
@@ -196,7 +196,7 @@ fn check_filename(
     }
     if flen <= 64 {
         // Filename is embedded in bref.
-        let buf = libhammer2::util::bin_to_string(&bref.check[..flen])?;
+        let buf = libfs::string::b2s(&bref.check[..flen])?;
         if let Some(filename) = filename {
             if filename[..flen] == buf {
                 Ok(Some(buf))
@@ -240,7 +240,7 @@ fn check_filename(
         if !validate_crc(bref, &data, strict)? {
             return Ok(None);
         }
-        let buf = libhammer2::util::bin_to_string(&data[..flen])?;
+        let buf = libfs::string::b2s(&data[..flen])?;
         if let Some(filename) = filename {
             if filename[..flen] == buf {
                 Ok(Some(buf))
@@ -475,7 +475,7 @@ fn enter_inode_untested(
         inode.meta.typ,
         inode.meta.inum,
         loff,
-        icrc32::iscsi_crc32(libhammer2::util::any_as_u8_slice(inode)),
+        icrc32::iscsi_crc32(libfs::cast::as_u8_slice(inode)),
     );
     let scan2 = scan1.clone();
 
@@ -624,16 +624,16 @@ fn dump_tree(
                     std::fs::create_dir(dest)?;
                     get_entry_mut!(ihash1, hid).encountered = true;
                 }
-                let mut st = libhammer2::os::new_stat();
+                let mut st = libfs::os::new_stat();
                 unsafe {
-                    let dest = libhammer2::util::new_cstring!(dest)?;
+                    let dest = libfs::string::new_cstring!(dest)?;
                     let pdest = dest.as_ptr();
-                    if libhammer2::os::stat(pdest, &mut st) == 0 {
+                    if libfs::os::stat(pdest, &mut st) == 0 {
                         if st.get_flags() != 0 {
-                            let _ = libhammer2::os::chflags(pdest, 0);
+                            let _ = libfs::os::chflags(pdest, 0);
                         }
                         if (st.st_mode & 0o700) != 0o700 {
-                            let _ = libhammer2::os::chmod(pdest, 0o755);
+                            let _ = libfs::os::chmod(pdest, 0o755);
                         }
                     }
                 }
@@ -662,20 +662,20 @@ fn dump_tree(
             // Final adjustment to directory inode.
             if depth != 1 {
                 unsafe {
-                    let dest = libhammer2::util::new_cstring!(dest)?;
+                    let dest = libfs::string::new_cstring!(dest)?;
                     let pdest = dest.as_ptr();
                     let tvs = inode.meta.get_utimes_timeval();
-                    let error = libhammer2::os::lutimes(pdest, tvs.as_ptr());
+                    let error = libfs::os::lutimes(pdest, tvs.as_ptr());
                     if error != 0 {
                         log::error!("lutimes {dest:?} {tvs:?} {error}");
                     }
-                    let _ = libhammer2::os::lchown(
+                    let _ = libfs::os::lchown(
                         pdest,
                         hammer2_to_unix_xid(&inode.meta.uid),
                         hammer2_to_unix_xid(&inode.meta.gid),
                     );
-                    let _ = libhammer2::os::chmod(pdest, inode.meta.mode); // XXX lchmod
-                    let _ = libhammer2::os::lchflags(pdest, inode.meta.uflags.into());
+                    let _ = libfs::os::chmod(pdest, inode.meta.mode); // XXX lchmod
+                    let _ = libfs::os::lchflags(pdest, inode.meta.uflags.into());
                 }
             }
         }
@@ -685,16 +685,16 @@ fn dump_tree(
                 let topo = get_entry_mut!(thash, topo_hid);
                 let path = format!("{}.{:05}", dest, topo.iterator);
                 topo.iterator += 1;
-                let mut st = libhammer2::os::new_stat();
+                let mut st = libfs::os::new_stat();
                 unsafe {
-                    let path = libhammer2::util::new_cstring!(&*path)?;
+                    let path = libfs::string::new_cstring!(&*path)?;
                     let ppath = path.as_ptr();
-                    if libhammer2::os::stat(ppath, &mut st) == 0 {
+                    if libfs::os::stat(ppath, &mut st) == 0 {
                         if st.get_flags() != 0 {
-                            let _ = libhammer2::os::chflags(ppath, 0);
+                            let _ = libfs::os::chflags(ppath, 0);
                         }
                         if (st.st_mode & 0o600) != 0o600 {
-                            let _ = libhammer2::os::chmod(ppath, 0o644);
+                            let _ = libfs::os::chmod(ppath, 0o644);
                         }
                     }
                 }
@@ -708,16 +708,16 @@ fn dump_tree(
                 let topo = get_entry_mut!(thash, topo_hid);
                 let path = format!("{}.{:05}", dest, topo.iterator);
                 topo.iterator += 1;
-                let mut st = libhammer2::os::new_stat();
+                let mut st = libfs::os::new_stat();
                 unsafe {
-                    let path = libhammer2::util::new_cstring!(&*path)?;
+                    let path = libfs::string::new_cstring!(&*path)?;
                     let ppath = path.as_ptr();
-                    if libhammer2::os::stat(ppath, &mut st) == 0 {
+                    if libfs::os::stat(ppath, &mut st) == 0 {
                         if st.get_flags() != 0 {
-                            let _ = libhammer2::os::chflags(ppath, 0);
+                            let _ = libfs::os::chflags(ppath, 0);
                         }
                         if (st.st_mode & 0o600) != 0o600 {
-                            let _ = libhammer2::os::chmod(ppath, 0o644);
+                            let _ = libfs::os::chmod(ppath, 0o644);
                         }
                     }
                 }
@@ -886,16 +886,16 @@ fn dump_inum_file(
         if std::fs::hard_link(&iscan.link_file_path, path1).is_ok() {
             return Ok(true);
         }
-        let link_file_path = libhammer2::util::new_cstring!(&*iscan.link_file_path)?;
+        let link_file_path = libfs::string::new_cstring!(&*iscan.link_file_path)?;
         let plink_file_path = link_file_path.as_ptr();
         unsafe {
-            let _ = libhammer2::os::chflags(plink_file_path, 0);
-            let _ = libhammer2::os::chmod(plink_file_path, 0o600);
+            let _ = libfs::os::chflags(plink_file_path, 0);
+            let _ = libfs::os::chmod(plink_file_path, 0o600);
         }
         if std::fs::hard_link(&iscan.link_file_path, path1).is_ok() {
             unsafe {
-                let _ = libhammer2::os::chmod(plink_file_path, inode.meta.mode);
-                let _ = libhammer2::os::chflags(plink_file_path, inode.meta.uflags.into());
+                let _ = libfs::os::chmod(plink_file_path, inode.meta.mode);
+                let _ = libfs::os::chflags(plink_file_path, inode.meta.uflags.into());
             }
             return Ok(true);
         }
@@ -903,10 +903,10 @@ fn dump_inum_file(
     // Cleanup potential flags and modes to allow us to write out a
     // new file.
     unsafe {
-        let path1 = libhammer2::util::new_cstring!(path1)?;
+        let path1 = libfs::string::new_cstring!(path1)?;
         let ppath1 = path1.as_ptr();
-        let _ = libhammer2::os::chflags(ppath1, 0);
-        let _ = libhammer2::os::chmod(ppath1, 0o600);
+        let _ = libfs::os::chflags(ppath1, 0);
+        let _ = libfs::os::chmod(ppath1, 0o600);
     }
     let mut fp = std::fs::File::create(path1)?;
     let res = if inode.meta.has_direct_data() {
@@ -932,14 +932,14 @@ fn dump_inum_file(
     // On failure, rename file to .corrupted.
     fp.set_len(inode.meta.size)?;
     unsafe {
-        let path1 = libhammer2::util::new_cstring!(path1)?;
+        let path1 = libfs::string::new_cstring!(path1)?;
         let ppath1 = path1.as_ptr();
         let tvs = inode.meta.get_utimes_timeval();
-        let error = libhammer2::os::utimes(ppath1, tvs.as_ptr());
+        let error = libfs::os::utimes(ppath1, tvs.as_ptr());
         if error != 0 {
             log::error!("utimes {path1:?} {tvs:?} {error}");
         }
-        let _ = libhammer2::os::chown(
+        let _ = libfs::os::chown(
             ppath1,
             hammer2_to_unix_xid(&inode.meta.uid),
             hammer2_to_unix_xid(&inode.meta.gid),
@@ -947,10 +947,10 @@ fn dump_inum_file(
     }
     get_entry_mut!(ihash1, hid).link_file_path = if res {
         unsafe {
-            let path1 = libhammer2::util::new_cstring!(path1)?;
+            let path1 = libfs::string::new_cstring!(path1)?;
             let ppath1 = path1.as_ptr();
-            let _ = libhammer2::os::chmod(ppath1, inode.meta.mode);
-            let _ = libhammer2::os::chflags(ppath1, inode.meta.uflags.into());
+            let _ = libfs::os::chmod(ppath1, inode.meta.mode);
+            let _ = libfs::os::chflags(ppath1, inode.meta.uflags.into());
         }
         path1.to_string()
     } else {
@@ -1011,7 +1011,7 @@ fn dump_file_data(
                     }
                     _ => data, // leave in current form
                 };
-                libhammer2::util::seek_set(fp, bref.key)?;
+                libfs::fs::seek_set(fp, bref.key)?;
                 if bref.key + u64::try_from(dbuf.len())? > fsize {
                     fp.write_all(&dbuf[..(fsize - bref.key).try_into()?])?;
                 } else {
@@ -1030,11 +1030,11 @@ fn validate_crc(
     bref: &libhammer2::fs::Hammer2Blockref,
     data: &[u8],
     strict: bool,
-) -> nix::Result<bool> {
-    Ok(match libhammer2::fs::dec_check(bref.methods) {
-        libhammer2::fs::HAMMER2_CHECK_NONE | libhammer2::fs::HAMMER2_CHECK_DISABLED => !strict,
-        _ => libhammer2::ondisk::verify_media(bref, data)?,
-    })
+) -> libhammer2::Result<bool> {
+    match libhammer2::fs::dec_check(bref.methods) {
+        libhammer2::fs::HAMMER2_CHECK_NONE | libhammer2::fs::HAMMER2_CHECK_DISABLED => Ok(!strict),
+        _ => libhammer2::ondisk::verify_media(bref, data),
+    }
 }
 
 // Convert a hammer2 uuid to a uid or gid.

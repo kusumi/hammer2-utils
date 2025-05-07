@@ -28,10 +28,7 @@ pub(crate) fn run(args: &[&str]) -> hammer2_utils::Result<()> {
         let fp = super::get_ioctl_handle(dir)?;
         match unsafe { libhammer2::ioctl::destroy(fp.as_raw_fd(), &mut des) } {
             Ok(_) => println!("ok"),
-            Err(e) => {
-                println!("{e}");
-                return Err(Box::new(e));
-            }
+            Err(e) => return Err(Box::new(e)),
         }
     }
     Ok(())

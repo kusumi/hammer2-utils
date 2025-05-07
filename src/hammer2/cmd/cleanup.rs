@@ -29,7 +29,7 @@ pub(crate) fn run(f: Option<&str>, opt: &crate::Opt) -> hammer2_utils::Result<()
     if let Some(f) = f {
         return docleanup(f, opt);
     }
-    let m = libhammer2::os::get_mnt_info()?;
+    let m = libfs::os::get_mnt_info()?;
     if m.is_empty() {
         println!("hammer2 cleanup: no HAMMER2 mounts");
         return Ok(());

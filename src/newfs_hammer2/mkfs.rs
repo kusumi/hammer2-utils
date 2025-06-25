@@ -61,7 +61,7 @@ impl Opt {
     pub(crate) fn new() -> Self {
         Self {
             hammer2_version: get_hammer2_version(),
-            label: vec!["LOCAL".to_string()],
+            label: vec![libhammer2::inode::PFS_LABEL_LOCAL.to_string()],
             comp_type: libhammer2::fs::HAMMER2_COMP_DEFAULT, // default LZ4
             check_type: libhammer2::fs::HAMMER2_CHECK_DEFAULT, // default xxhash64
             default_label_type: None,
@@ -93,9 +93,15 @@ impl Opt {
     pub(crate) fn adjust(&mut self, total_size: u64) {
         // Adjust Label[].
         match self.default_label_type {
-            Some(Label::Boot) => self.label.push("BOOT".to_string()),
-            Some(Label::Root) => self.label.push("ROOT".to_string()),
-            Some(Label::Data) => self.label.push("DATA".to_string()),
+            Some(Label::Boot) => self
+                .label
+                .push(libhammer2::inode::PFS_LABEL_BOOT.to_string()),
+            Some(Label::Root) => self
+                .label
+                .push(libhammer2::inode::PFS_LABEL_ROOT.to_string()),
+            Some(Label::Data) => self
+                .label
+                .push(libhammer2::inode::PFS_LABEL_DATA.to_string()),
             None => (),
         }
 
@@ -274,7 +280,7 @@ fn format_inode(
         //
         // Do not allow compression when creating any "BOOT" label
         // (pfs-create also does the same if the pfs is named "BOOT")
-        if s.to_uppercase() == "BOOT" {
+        if s.to_uppercase() == libhammer2::inode::PFS_LABEL_BOOT {
             rawip.meta.comp_algo = libhammer2::fs::enc_algo(libhammer2::fs::HAMMER2_COMP_AUTOZERO);
             rawip.meta.check_algo =
                 libhammer2::fs::enc_algo(libhammer2::fs::HAMMER2_CHECK_XXHASH64);

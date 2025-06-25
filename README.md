@@ -1,4 +1,4 @@
-hammer2-utils ([v0.4.1](https://github.com/kusumi/hammer2-utils/releases/tag/v0.4.1))
+hammer2-utils ([v0.4.2](https://github.com/kusumi/hammer2-utils/releases/tag/v0.4.2))
 ========
 
 ## About
@@ -11,7 +11,7 @@ Linux / FreeBSD
 
 ## Requirements
 
-Rust 1.86.0 or newer
+Rust 1.87.0 or newer
 
 ## Build
 

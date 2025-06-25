@@ -23,10 +23,14 @@ pub(crate) fn run(f: &str, args: &[&str], flags: u32) -> hammer2_utils::Result<(
         pfs.name_key = u64::MAX;
         let fp = super::get_ioctl_handle(f)?;
         unsafe { libhammer2::ioctl::pfs_get(fp.as_raw_fd(), &mut pfs) }?;
-        // XXX want local time
-        let dt: time::OffsetDateTime = std::time::SystemTime::now().into();
+        let t = i64::try_from(libfs::time::get_current()?)?
+            + libhammer2::subs::get_local_time_offset()?;
         let fmt = time::format_description::parse("[year][month][day].[hour][minute][second]")?;
-        &format!("{}.{}", libfs::string::b2s(&pfs.name)?, dt.format(&fmt)?)
+        &format!(
+            "{}.{}",
+            libfs::string::b2s(&pfs.name)?,
+            time::OffsetDateTime::from_unix_timestamp(t)?.format(&fmt)?
+        )
     };
     let mut pfs = libhammer2::ioctl::IocPfs::new();
     pfs.copy_name(label.as_bytes());
